@@ -189,6 +189,60 @@ async def scan_directory(directory: str) -> list[dict]:
     return books
 
 
+async def import_from_source(source_id: int, directory: str = None) -> dict:
+    from app.database import (
+        init_db,
+        get_or_create_category,
+        insert_book,
+        get_source_by_id,
+    )
+
+    db = await aiosqlite.connect("library.db")
+    db.row_factory = aiosqlite.Row
+
+    if directory is None:
+        source = await get_source_by_id(db, source_id)
+        if not source:
+            await db.close()
+            return {
+                "error": "Source not found",
+                "scanned": 0,
+                "imported": 0,
+                "skipped": 0,
+            }
+        directory = source["path"]
+
+    await init_db()
+
+    books = await scan_directory(directory)
+    scanned = len(books)
+    imported = 0
+    skipped = 0
+
+    for book in books:
+        category_id = None
+        if book.get("category_name"):
+            category_id = await get_or_create_category(db, book["category_name"])
+
+        book["category_id"] = category_id
+        book["source_id"] = source_id
+
+        book_id = await insert_book(db, book)
+        if book_id:
+            imported += 1
+            print(f"  + {book.get('title', 'Unknown')}")
+        else:
+            skipped += 1
+            print(f"  ~ Skipped (duplicate): {book.get('title', 'Unknown')}")
+
+    await db.close()
+    print(
+        f"\nImport complete: {imported} imported, {skipped} skipped, {scanned - imported - skipped} total"
+    )
+
+    return {"scanned": scanned, "imported": imported, "skipped": skipped}
+
+
 async def import_library():
     from app.database import init_db, get_or_create_category, insert_book, get_db
 

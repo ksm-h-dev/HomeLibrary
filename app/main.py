@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import os
 
 from app.database import init_db
-from app.routers import books, search
+from app.routers import books, search, sources
 from config import SERVER_HOST, SERVER_PORT
 
 app = FastAPI(
@@ -24,6 +24,7 @@ app.add_middleware(
 
 app.include_router(books.router)
 app.include_router(search.router)
+app.include_router(sources.router)
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
 

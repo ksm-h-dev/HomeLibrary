@@ -16,6 +16,17 @@ async def get_db():
 async def init_db():
     async with aiosqlite.connect(DATABASE_PATH) as db:
         await db.executescript("""
+            CREATE TABLE IF NOT EXISTS sources (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL CHECK(type IN ('dvd', 'hdd', 'ssd', 'nas', 'network', 'cloud', 'local')),
+                path TEXT NOT NULL,
+                is_active INTEGER DEFAULT 1,
+                description TEXT DEFAULT '',
+                last_scanned TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL UNIQUE,
@@ -39,14 +50,18 @@ async def init_db():
                 format TEXT DEFAULT '',
                 file_size INTEGER DEFAULT 0,
                 description TEXT DEFAULT '',
-                file_path TEXT NOT NULL UNIQUE,
+                file_path TEXT NOT NULL,
                 cover_path TEXT DEFAULT '',
                 category_id INTEGER,
+                source_id INTEGER,
                 language TEXT DEFAULT 'ru',
                 source_url TEXT DEFAULT '',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (category_id) REFERENCES categories(id)
+                FOREIGN KEY (category_id) REFERENCES categories(id),
+                FOREIGN KEY (source_id) REFERENCES sources(id)
             );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_books_file_path ON books(file_path);
 
             CREATE TABLE IF NOT EXISTS book_tags (
                 book_id INTEGER NOT NULL,
@@ -249,6 +264,9 @@ async def get_stats(db: aiosqlite.Connection):
     cursor = await db.execute("SELECT COUNT(*) FROM categories")
     total_categories = (await cursor.fetchone())[0]
 
+    cursor = await db.execute("SELECT COUNT(*) FROM sources")
+    total_sources = (await cursor.fetchone())[0]
+
     cursor = await db.execute(
         "SELECT format, COUNT(*) as count FROM books GROUP BY format"
     )
@@ -262,6 +280,114 @@ async def get_stats(db: aiosqlite.Connection):
     return {
         "total_books": total_books,
         "total_categories": total_categories,
+        "total_sources": total_sources,
         "formats": formats,
         "years": years,
     }
+
+
+async def get_all_sources(db: aiosqlite.Connection, active_only: bool = False):
+    query = """
+        SELECT s.*, COUNT(b.id) as books_count
+        FROM sources s
+        LEFT JOIN books b ON s.id = b.source_id
+    """
+    if active_only:
+        query += " WHERE s.is_active = 1"
+    query += " GROUP BY s.id ORDER BY s.name"
+
+    cursor = await db.execute(query)
+    rows = await cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+async def get_source_by_id(db: aiosqlite.Connection, source_id: int):
+    cursor = await db.execute(
+        """
+        SELECT s.*, COUNT(b.id) as books_count
+        FROM sources s
+        LEFT JOIN books b ON s.id = b.source_id
+        WHERE s.id = ?
+        GROUP BY s.id
+    """,
+        (source_id,),
+    )
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def insert_source(db: aiosqlite.Connection, source_data: dict):
+    cursor = await db.execute(
+        """
+        INSERT INTO sources (name, type, path, is_active, description)
+        VALUES (?, ?, ?, ?, ?)
+    """,
+        (
+            source_data.get("name", ""),
+            source_data.get("type", "local"),
+            source_data.get("path", ""),
+            source_data.get("is_active", 1),
+            source_data.get("description", ""),
+        ),
+    )
+    await db.commit()
+    return cursor.lastrowid
+
+
+async def update_source(db: aiosqlite.Connection, source_id: int, source_data: dict):
+    await db.execute(
+        """
+        UPDATE sources 
+        SET name = ?, type = ?, path = ?, is_active = ?, description = ?,
+            last_scanned = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """,
+        (
+            source_data.get("name", ""),
+            source_data.get("type", "local"),
+            source_data.get("path", ""),
+            source_data.get("is_active", 1),
+            source_data.get("description", ""),
+            source_id,
+        ),
+    )
+    await db.commit()
+
+
+async def delete_source(db: aiosqlite.Connection, source_id: int):
+    await db.execute(
+        "UPDATE books SET source_id = NULL WHERE source_id = ?", (source_id,)
+    )
+    await db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+    await db.commit()
+
+
+async def update_source_scan_time(db: aiosqlite.Connection, source_id: int):
+    await db.execute(
+        "UPDATE sources SET last_scanned = CURRENT_TIMESTAMP WHERE id = ?", (source_id,)
+    )
+    await db.commit()
+
+
+async def get_books_by_source(
+    db: aiosqlite.Connection, source_id: int, limit: int = 20, offset: int = 0
+):
+    cursor = await db.execute(
+        """
+        SELECT b.*, c.name as category_name, s.name as source_name
+        FROM books b
+        LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN sources s ON b.source_id = s.id
+        WHERE b.source_id = ?
+        ORDER BY b.id DESC LIMIT ? OFFSET ?
+    """,
+        (source_id, limit, offset),
+    )
+    rows = await cursor.fetchall()
+
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM books WHERE source_id = ?", (source_id,)
+    )
+    total = (await cursor.fetchone())[0]
+
+    return [dict(row) for row in rows], total

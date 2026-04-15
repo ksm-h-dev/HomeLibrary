@@ -88,9 +88,23 @@
 | file_path | TEXT | Путь к файлу книги |
 | cover_path | TEXT | Путь к обложке |
 | category_id | INTEGER | Внешний ключ на categories |
+| source_id | INTEGER | Внешний ключ на sources |
 | language | TEXT | Язык (ru, en) |
 | source_url | TEXT | URL источника |
 | created_at | TIMESTAMP | Дата добавления в БД |
+
+**Таблица `sources`** (хранилища)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | INTEGER | Первичный ключ |
+| name | TEXT | Название хранилища |
+| type | TEXT | Тип: local, hdd, ssd, dvd, nas, network, cloud |
+| path | TEXT | Путь к хранилищу |
+| is_active | INTEGER | Активно (1) / отключено (0) |
+| description | TEXT | Описание |
+| last_scanned | TIMESTAMP | Последнее сканирование |
+| created_at | TIMESTAMP | Дата добавления |
 
 **Таблица `categories`**
 
@@ -265,9 +279,67 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
 {
   "total_books": 100,
   "total_categories": 10,
+  "total_sources": 3,
   "formats": {"pdf": 50, "djvu": 30, "rar": 20},
   "years": {"2020": 15, "2019": 12}
 }
+```
+
+### Sources API
+
+#### GET /api/sources
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "DVD Коллекция",
+    "type": "dvd",
+    "path": "D:\\",
+    "is_active": true,
+    "books_count": 45,
+    "last_scanned": "2024-01-15T10:30:00"
+  }
+]
+```
+
+#### POST /api/sources
+
+**Request:**
+```json
+{
+  "name": "Внешний HDD",
+  "type": "hdd",
+  "path": "E:\\Books",
+  "is_active": true
+}
+```
+
+#### POST /api/sources/{id}/scan
+
+Запускает сканирование хранилища и импорт книг.
+
+**Response:**
+```json
+{
+  "message": "Scan completed for Внешний HDD",
+  "scanned": 50,
+  "imported": 12,
+  "skipped": 38
+}
+```
+
+#### GET /api/sources/discover
+
+Автоматическое обнаружение подключенных дисков (Windows).
+
+**Response:**
+```json
+[
+  {"drive_letter": "C", "label": "System", "type": "fixed", "total_size": 500000000000},
+  {"drive_letter": "D", "label": "Data", "type": "removable"}
+]
 ```
 
 ## Развертывание

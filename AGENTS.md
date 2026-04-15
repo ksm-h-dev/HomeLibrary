@@ -16,9 +16,14 @@ C:\Library\
 ├── app/                    # FastAPI application
 │   ├── main.py            # Entry point
 │   ├── database.py        # SQLite + FTS5 full-text search
+│   ├── models.py          # Pydantic models
 │   └── routers/           # API endpoints
+│       ├── books.py      # Books API
+│       ├── search.py     # Search API
+│       └── sources.py    # Storage sources API
 ├── services/
-│   └── importer.py        # Scans C:\Book\ for books, parses .txt metadata
+│   ├── importer.py        # Scans filesystem, imports to DB
+│   └── drives.py          # Windows drive discovery (WMI)
 ├── web/
 │   └── index.html         # SPA frontend
 └── library.db             # SQLite database (created on first run)
@@ -28,25 +33,25 @@ C:\Library\
 
 | File | Purpose |
 |------|---------|
-| `config.py` | Books directory (`C:\Book\`), DB path, server port |
-| `services/importer.py` | Scans filesystem, parses metadata (KOI8-R, CP1251 encoding), imports to DB |
+| `config.py` | Books directory, DB path, server port |
+| `services/importer.py` | Scans filesystem, parses metadata (KOI8-R, CP1251), imports to DB |
+| `services/drives.py` | Discovers Windows drives via WMI/PowerShell |
 | `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers |
-| `web/index.html` | Browser client - search, browse, open files |
+| `app/routers/sources.py` | Storage management API (CRUD, scan, discover) |
+| `web/index.html` | Browser client - search, browse, manage sources |
 
 ## Database
 
 - SQLite with FTS5 virtual table for full-text search
 - Triggers auto-update FTS index on INSERT/UPDATE/DELETE to `books`
-- Books table has unique constraint on `file_path`
+- `books` table: unique index on `file_path`
+- `sources` table: storage locations (HDD, SSD, DVD, NAS, network)
 
-## Books Source
+## Storage Sources
 
-Books directory: `C:\Book\` (configurable via `BOOKS_DIR` in `config.py`)
+Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 
-Expected file layout per book:
-- `book.pdf` / `book.djvu` / `book.rar` / `book.zip`
-- `book.txt` (metadata, KOI8-R or CP1251 encoded)
-- `book.jpg` (optional cover)
+Each book links to a source via `source_id` foreign key.
 
 ## API
 
@@ -58,6 +63,11 @@ Expected file layout per book:
 | `GET /api/search?q=...` | Full-text search (FTS5) |
 | `GET /api/categories` | Category list |
 | `GET /api/stats` | Library statistics |
+| `GET /api/sources` | List storage sources |
+| `POST /api/sources` | Add new source |
+| `DELETE /api/sources/{id}` | Remove source |
+| `POST /api/sources/{id}/scan` | Scan source and import books |
+| `GET /api/sources/discover` | Auto-detect Windows drives |
 
 ## Search
 
