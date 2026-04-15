@@ -14,6 +14,7 @@ class BookBase(BaseModel):
     file_size: int = 0
     description: str = ""
     file_path: str = ""
+    relative_path: str = ""
     cover_path: str = ""
     category_id: Optional[int] = None
     source_id: Optional[int] = None
@@ -54,6 +55,8 @@ class SourceBase(BaseModel):
     name: str
     type: Literal["dvd", "hdd", "ssd", "nas", "network", "cloud", "local"]
     path: str
+    volume_label: str = ""
+    catalog_id: str = ""
     is_active: bool = True
     description: str = ""
 
@@ -68,6 +71,8 @@ class SourceUpdate(BaseModel):
         None
     )
     path: Optional[str] = None
+    volume_label: Optional[str] = None
+    catalog_id: Optional[str] = None
     is_active: Optional[bool] = None
     description: Optional[str] = None
 
@@ -80,6 +85,13 @@ class SourceResponse(SourceBase):
 
     class Config:
         from_attributes = True
+
+
+class CatalogInfo(BaseModel):
+    id: str
+    name: str = ""
+    version: str = "1.0"
+    created: str = ""
 
 
 class DiscoveredDrive(BaseModel):

@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 import aiosqlite
+import os
 
 from app.database import (
     get_db,
@@ -101,12 +102,19 @@ async def scan_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)
     if not source:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    await update_source_scan_time(db, source_id)
-    result = await import_from_source(source_id)
+    directory = source.get("path", "")
+    if not directory or not os.path.exists(directory):
+        raise HTTPException(
+            status_code=400, detail=f"Source path does not exist: {directory}"
+        )
+
+    result = await import_from_source(source_id, directory)
 
     return {
         "message": f"Scan completed for {source['name']}",
+        "source_id": result.get("source_id"),
         "scanned": result.get("scanned", 0),
         "imported": result.get("imported", 0),
+        "updated": result.get("updated", 0),
         "skipped": result.get("skipped", 0),
     }

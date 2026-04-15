@@ -44,14 +44,22 @@ C:\Library\
 
 - SQLite with FTS5 virtual table for full-text search
 - Triggers auto-update FTS index on INSERT/UPDATE/DELETE to `books`
-- `books` table: unique index on `file_path`
+- `books` table: unique index on `source_id + relative_path` (no duplicates)
 - `sources` table: storage locations (HDD, SSD, DVD, NAS, network)
+- `sources` has `volume_label` and `catalog_id` for portable media identification
 
 ## Storage Sources
 
 Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 
-Each book links to a source via `source_id` foreign key.
+**Identification priority:**
+1. `catalog.json` → `id` field (preferred for portable media)
+2. Volume label (Windows drive label)
+3. Path fallback
+
+**Upsert behavior:** On rescan, existing books are updated (all fields) not duplicated.
+
+Each book links to a source via `source_id` + `relative_path`.
 
 ## API
 

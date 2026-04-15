@@ -21,6 +21,8 @@ async def init_db():
                 name TEXT NOT NULL,
                 type TEXT NOT NULL CHECK(type IN ('dvd', 'hdd', 'ssd', 'nas', 'network', 'cloud', 'local')),
                 path TEXT NOT NULL,
+                volume_label TEXT DEFAULT '',
+                catalog_id TEXT DEFAULT '',
                 is_active INTEGER DEFAULT 1,
                 description TEXT DEFAULT '',
                 last_scanned TIMESTAMP,
@@ -51,6 +53,7 @@ async def init_db():
                 file_size INTEGER DEFAULT 0,
                 description TEXT DEFAULT '',
                 file_path TEXT NOT NULL,
+                relative_path TEXT DEFAULT '',
                 cover_path TEXT DEFAULT '',
                 category_id INTEGER,
                 source_id INTEGER,
@@ -61,7 +64,7 @@ async def init_db():
                 FOREIGN KEY (source_id) REFERENCES sources(id)
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_books_file_path ON books(file_path);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_books_source_relpath ON books(source_id, relative_path);
 
             CREATE TABLE IF NOT EXISTS book_tags (
                 book_id INTEGER NOT NULL,
@@ -230,10 +233,55 @@ async def insert_book(db: aiosqlite.Connection, book_data: dict):
             """
             INSERT INTO books (
                 title, author, publisher, isbn, year, pages,
-                format, file_size, description, file_path,
-                cover_path, category_id, language, source_url
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                format, file_size, description, file_path, relative_path,
+                cover_path, category_id, source_id, language, source_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
+            (
+                book_data.get("title", ""),
+                book_data.get("author", ""),
+                book_data.get("publisher", ""),
+                book_data.get("isbn", ""),
+                book_data.get("year"),
+                book_data.get("pages"),
+                book_data.get("format", ""),
+                book_data.get("file_size", 0),
+                book_data.get("description", ""),
+                book_data.get("file_path", ""),
+                book_data.get("relative_path", ""),
+                book_data.get("cover_path", ""),
+                book_data.get("category_id"),
+                book_data.get("source_id"),
+                book_data.get("language", "ru"),
+                book_data.get("source_url", ""),
+            ),
+        )
+        await db.commit()
+        return cursor.lastrowid
+    except aiosqlite.IntegrityError:
+        return None
+
+
+async def upsert_book(db: aiosqlite.Connection, book_data: dict):
+    source_id = book_data.get("source_id")
+    relative_path = book_data.get("relative_path", "")
+
+    cursor = await db.execute(
+        "SELECT id FROM books WHERE source_id = ? AND relative_path = ?",
+        (source_id, relative_path),
+    )
+    existing = await cursor.fetchone()
+
+    if existing:
+        book_id = existing[0]
+        await db.execute(
+            """
+            UPDATE books SET
+                title = ?, author = ?, publisher = ?, isbn = ?, year = ?, pages = ?,
+                format = ?, file_size = ?, description = ?, file_path = ?,
+                cover_path = ?, category_id = ?, language = ?, source_url = ?
+            WHERE id = ?
+            """,
             (
                 book_data.get("title", ""),
                 book_data.get("author", ""),
@@ -249,12 +297,52 @@ async def insert_book(db: aiosqlite.Connection, book_data: dict):
                 book_data.get("category_id"),
                 book_data.get("language", "ru"),
                 book_data.get("source_url", ""),
+                book_id,
+            ),
+        )
+        await db.commit()
+        return book_id
+    else:
+        cursor = await db.execute(
+            """
+            INSERT INTO books (
+                title, author, publisher, isbn, year, pages,
+                format, file_size, description, file_path, relative_path,
+                cover_path, category_id, source_id, language, source_url
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                book_data.get("title", ""),
+                book_data.get("author", ""),
+                book_data.get("publisher", ""),
+                book_data.get("isbn", ""),
+                book_data.get("year"),
+                book_data.get("pages"),
+                book_data.get("format", ""),
+                book_data.get("file_size", 0),
+                book_data.get("description", ""),
+                book_data.get("file_path", ""),
+                book_data.get("relative_path", ""),
+                book_data.get("cover_path", ""),
+                book_data.get("category_id"),
+                book_data.get("source_id"),
+                book_data.get("language", "ru"),
+                book_data.get("source_url", ""),
             ),
         )
         await db.commit()
         return cursor.lastrowid
-    except aiosqlite.IntegrityError:
-        return None
+
+
+async def get_book_by_source_and_path(
+    db: aiosqlite.Connection, source_id: int, relative_path: str
+):
+    cursor = await db.execute(
+        "SELECT id FROM books WHERE source_id = ? AND relative_path = ?",
+        (source_id, relative_path),
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else None
 
 
 async def get_stats(db: aiosqlite.Connection):
@@ -319,13 +407,15 @@ async def get_source_by_id(db: aiosqlite.Connection, source_id: int):
 async def insert_source(db: aiosqlite.Connection, source_data: dict):
     cursor = await db.execute(
         """
-        INSERT INTO sources (name, type, path, is_active, description)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO sources (name, type, path, volume_label, catalog_id, is_active, description)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     """,
         (
             source_data.get("name", ""),
             source_data.get("type", "local"),
             source_data.get("path", ""),
+            source_data.get("volume_label", ""),
+            source_data.get("catalog_id", ""),
             source_data.get("is_active", 1),
             source_data.get("description", ""),
         ),
@@ -338,20 +428,71 @@ async def update_source(db: aiosqlite.Connection, source_id: int, source_data: d
     await db.execute(
         """
         UPDATE sources 
-        SET name = ?, type = ?, path = ?, is_active = ?, description = ?,
-            last_scanned = CURRENT_TIMESTAMP
+        SET name = ?, type = ?, path = ?, volume_label = ?, catalog_id = ?,
+            is_active = ?, description = ?, last_scanned = CURRENT_TIMESTAMP
         WHERE id = ?
     """,
         (
             source_data.get("name", ""),
             source_data.get("type", "local"),
             source_data.get("path", ""),
+            source_data.get("volume_label", ""),
+            source_data.get("catalog_id", ""),
             source_data.get("is_active", 1),
             source_data.get("description", ""),
             source_id,
         ),
     )
     await db.commit()
+
+
+async def update_source_path(
+    db: aiosqlite.Connection, source_id: int, new_path: str, new_volume_label: str = ""
+):
+    await db.execute(
+        """
+        UPDATE sources 
+        SET path = ?, volume_label = COALESCE(?, volume_label), last_scanned = CURRENT_TIMESTAMP
+        WHERE id = ?
+    """,
+        (new_path, new_volume_label, source_id),
+    )
+    await db.commit()
+
+
+async def find_source_by_catalog_id(db: aiosqlite.Connection, catalog_id: str):
+    cursor = await db.execute(
+        "SELECT id FROM sources WHERE catalog_id = ?", (catalog_id,)
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+async def find_source_by_volume_label(db: aiosqlite.Connection, volume_label: str):
+    cursor = await db.execute(
+        "SELECT id FROM sources WHERE volume_label = ?", (volume_label,)
+    )
+    row = await cursor.fetchone()
+    return row[0] if row else None
+
+
+async def upsert_source_by_identifier(db: aiosqlite.Connection, source_data: dict):
+    catalog_id = source_data.get("catalog_id", "")
+    volume_label = source_data.get("volume_label", "")
+
+    existing_id = None
+
+    if catalog_id:
+        existing_id = await find_source_by_catalog_id(db, catalog_id)
+
+    if not existing_id and volume_label:
+        existing_id = await find_source_by_volume_label(db, volume_label)
+
+    if existing_id:
+        await update_source(db, existing_id, source_data)
+        return existing_id
+    else:
+        return await insert_source(db, source_data)
 
 
 async def delete_source(db: aiosqlite.Connection, source_id: int):

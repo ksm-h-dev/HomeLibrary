@@ -85,13 +85,16 @@
 | format | TEXT | Формат файла (pdf, djvu, rar, zip) |
 | file_size | INTEGER | Размер файла в байтах |
 | description | TEXT | Описание книги |
-| file_path | TEXT | Путь к файлу книги |
+| file_path | TEXT | Полный путь к файлу книги |
+| relative_path | TEXT | Относительный путь от корня хранилища |
 | cover_path | TEXT | Путь к обложке |
 | category_id | INTEGER | Внешний ключ на categories |
 | source_id | INTEGER | Внешний ключ на sources |
 | language | TEXT | Язык (ru, en) |
 | source_url | TEXT | URL источника |
 | created_at | TIMESTAMP | Дата добавления в БД |
+
+**Уникальный индекс:** `source_id + relative_path` (не допускает дубликатов)
 
 **Таблица `sources`** (хранилища)
 
@@ -100,7 +103,9 @@
 | id | INTEGER | Первичный ключ |
 | name | TEXT | Название хранилища |
 | type | TEXT | Тип: local, hdd, ssd, dvd, nas, network, cloud |
-| path | TEXT | Путь к хранилищу |
+| path | TEXT | Текущий путь к хранилищу |
+| volume_label | TEXT | Метка тома (volume label) |
+| catalog_id | TEXT | Идентификатор из catalog.json |
 | is_active | INTEGER | Активно (1) / отключено (0) |
 | description | TEXT | Описание |
 | last_scanned | TIMESTAMP | Последнее сканирование |

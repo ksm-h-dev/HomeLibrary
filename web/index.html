@@ -453,6 +453,8 @@
                             <p>${escapeHtml(source.path)}</p>
                             <div class="meta">
                                 <span>${source.books_count} книг</span>
+                                ${source.catalog_id ? `<span>ID: ${escapeHtml(source.catalog_id)}</span>` : ''}
+                                ${source.volume_label ? `<span>Метка: ${escapeHtml(source.volume_label)}</span>` : ''}
                                 <span>Последнее сканирование: ${lastScanned}</span>
                                 ${source.is_active ? '<span style="color:#27ae60">● Активно</span>' : '<span style="color:#e74c3c">○ Отключено</span>'}
                             </div>
@@ -529,12 +531,12 @@
         }
         
         async function scanSource(sourceId) {
-            if (!confirm('Начать сканирование хранилища? Это может занять некоторое время.')) return;
+            if (!confirm('Начать сканирование хранилища? Это может занять некоторое время.\n\nПри повторном сканировании существующие книги будут обновлены.')) return;
             
             try {
                 const res = await fetch(`/api/sources/${sourceId}/scan`, {method: 'POST'});
                 const data = await res.json();
-                alert(`Сканирование завершено!\nДобавлено: ${data.imported}\nПропущено: ${data.skipped}`);
+                alert(`Сканирование завершено!\n\nНовых: ${data.imported}\nОбновлено: ${data.updated}\nПропущено: ${data.skipped}`);
                 loadSources();
                 loadStats();
             } catch (e) { console.error(e); }

@@ -142,15 +142,25 @@ def find_cover_file(book_path: str) -> str | None:
     return None
 
 
-async def scan_directory(directory: str) -> list[dict]:
+def compute_relative_path(root_path: str, file_path: str) -> str:
+    rel = os.path.relpath(file_path, root_path)
+    return rel.replace("\\", "/")
+
+
+async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
     books = []
 
     for root, dirs, files in os.walk(directory):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+
         category_name = Path(root).name
         if root == directory:
-            category_name = "Корень"
+            category_name = ""
 
         for filename in files:
+            if filename.startswith("."):
+                continue
+
             filepath = os.path.join(root, filename)
             ext = filename.lower().split(".")[-1]
 
@@ -162,7 +172,8 @@ async def scan_directory(directory: str) -> list[dict]:
 
             book_info = {
                 "file_path": filepath,
-                "category_name": category_name if category_name != "Корень" else "",
+                "relative_path": compute_relative_path(directory, filepath),
+                "category_name": category_name,
                 "format": ext,
                 "file_size": os.path.getsize(filepath),
             }
@@ -184,6 +195,9 @@ async def scan_directory(directory: str) -> list[dict]:
                     Path(filename).stem.replace("_", " ").replace("-", " ")
                 )
 
+            if source_id:
+                book_info["source_id"] = source_id
+
             books.append(book_info)
 
     return books
@@ -193,30 +207,57 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     from app.database import (
         init_db,
         get_or_create_category,
-        insert_book,
+        upsert_book,
         get_source_by_id,
+        update_source_path,
+        upsert_source_by_identifier,
+        DATABASE_PATH,
     )
+    from services.drives import get_source_identifier, get_volume_label
 
-    db = await aiosqlite.connect("library.db")
+    db = await aiosqlite.connect(DATABASE_PATH)
     db.row_factory = aiosqlite.Row
 
-    if directory is None:
+    catalog_id, volume_label, catalog_info = await get_source_identifier(directory)
+
+    if source_id is None:
+        source_data = {
+            "name": catalog_info.name
+            if catalog_info
+            else volume_label or os.path.basename(directory),
+            "type": "local",
+            "path": directory,
+            "volume_label": volume_label or "",
+            "catalog_id": catalog_id or "",
+            "is_active": 1,
+            "description": f"Импортировано {directory}",
+        }
+        source_id = await upsert_source_by_identifier(db, source_data)
+        print(
+            f"Source created/found: id={source_id}, catalog_id={catalog_id}, volume_label={volume_label}"
+        )
+    else:
         source = await get_source_by_id(db, source_id)
-        if not source:
-            await db.close()
-            return {
-                "error": "Source not found",
-                "scanned": 0,
-                "imported": 0,
-                "skipped": 0,
-            }
-        directory = source["path"]
+        if source:
+            await update_source_path(db, source_id, directory, volume_label)
+            if catalog_id:
+                source_data = {
+                    "name": source["name"],
+                    "type": source["type"],
+                    "path": directory,
+                    "volume_label": volume_label or source.get("volume_label", ""),
+                    "catalog_id": catalog_id,
+                    "is_active": source.get("is_active", 1),
+                    "description": source.get("description", ""),
+                }
+                await upsert_source_by_identifier(db, source_data)
 
     await init_db()
 
-    books = await scan_directory(directory)
+    books = await scan_directory(directory, source_id)
     scanned = len(books)
     imported = 0
+    updated = 0
     skipped = 0
 
     for book in books:
@@ -227,24 +268,37 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         book["category_id"] = category_id
         book["source_id"] = source_id
 
-        book_id = await insert_book(db, book)
-        if book_id:
+        existing = await db.execute(
+            "SELECT id FROM books WHERE source_id = ? AND relative_path = ?",
+            (source_id, book["relative_path"]),
+        ).fetchone()
+
+        book_id = await upsert_book(db, book)
+
+        if existing:
+            updated += 1
+            print(f"  ~ Updated: {book.get('title', 'Unknown')}")
+        elif book_id:
             imported += 1
-            print(f"  + {book.get('title', 'Unknown')}")
+            print(f"  + New: {book.get('title', 'Unknown')}")
         else:
             skipped += 1
-            print(f"  ~ Skipped (duplicate): {book.get('title', 'Unknown')}")
+            print(f"  - Skipped: {book.get('title', 'Unknown')}")
 
     await db.close()
-    print(
-        f"\nImport complete: {imported} imported, {skipped} skipped, {scanned - imported - skipped} total"
-    )
+    print(f"\nImport complete: {imported} new, {updated} updated, {skipped} skipped")
 
-    return {"scanned": scanned, "imported": imported, "skipped": skipped}
+    return {
+        "source_id": source_id,
+        "scanned": scanned,
+        "imported": imported,
+        "updated": updated,
+        "skipped": skipped,
+    }
 
 
 async def import_library():
-    from app.database import init_db, get_or_create_category, insert_book, get_db
+    from app.database import init_db, get_or_create_category, upsert_book, DATABASE_PATH
 
     print(f"Scanning directory: {BOOKS_DIR}")
     await init_db()
@@ -253,9 +307,9 @@ async def import_library():
     print(f"Found {len(books)} books")
 
     imported = 0
-    skipped = 0
+    updated = 0
 
-    db = await aiosqlite.connect("library.db")
+    db = await aiosqlite.connect(DATABASE_PATH)
     db.row_factory = aiosqlite.Row
 
     for book in books:
@@ -265,16 +319,13 @@ async def import_library():
 
         book["category_id"] = category_id
 
-        book_id = await insert_book(db, book)
+        book_id = await upsert_book(db, book)
         if book_id:
-            imported += 1
             print(f"  + {book.get('title', 'Unknown')}")
-        else:
-            skipped += 1
-            print(f"  ~ Skipped (duplicate): {book.get('title', 'Unknown')}")
+            imported += 1
 
     await db.close()
-    print(f"\nImport complete: {imported} imported, {skipped} skipped")
+    print(f"\nImport complete: {imported} books processed")
 
 
 if __name__ == "__main__":
