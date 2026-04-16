@@ -162,23 +162,16 @@
         
         <div id="setupContent">
             <div class="step">
-                <label class="step-label">1. Выберите диск или источник</label>
-                <div id="drivesList" class="drives-list">
-                    <p style="color:#999;">Загрузка дисков...</p>
-                </div>
-            </div>
-            
-            <div class="step" id="folderStep" style="display:none;">
-                <label class="step-label">2. Выберите папку с книгами</label>
-                <button id="selectFolderBtn" class="btn-primary" disabled>
+                <label class="step-label">1. Выберите папку с книгами</label>
+                <button id="selectFolderBtn" class="btn-primary">
                     📁 Выбрать папку
                 </button>
                 <p id="selectedPath" style="margin-top:10px;color:#666;font-size:13px;"></p>
             </div>
             
             <div class="step" id="actionStep" style="display:none;">
-                <label class="step-label">3. Действие</label>
-                <button id="scanBtn" class="btn-primary" disabled>
+                <label class="step-label">2. Действие</label>
+                <button id="scanBtn" class="btn-primary">
                     🔍 Начать сканирование
                 </button>
                 <button id="skipBtn" class="btn-secondary">
@@ -201,74 +194,31 @@
     </div>
 
     <script>
-        let selectedDrive = null;
         let selectedPath = '';
         
-        async function loadDrives() {
-            try {
-                const res = await fetch('/api/setup/drives');
-                const drives = await res.json();
-                
-                const container = document.getElementById('drivesList');
-                container.innerHTML = '';
-                
-                if (drives.length === 0) {
-                    container.innerHTML = '<p style="color:#999;">Диски не обнаружены</p>';
-                    return;
-                }
-                
-                drives.forEach(drive => {
-                    const item = document.createElement('div');
-                    item.className = 'drive-item';
-                    const size = drive.total_size ? Math.round(drive.total_size / 1024**3) + ' GB' : '';
-                    const free = drive.free_space ? Math.round(drive.free_space / 1024**3) + ' GB свободно' : '';
-                    item.innerHTML = `<strong>${drive.drive_letter}:</strong> ${drive.label || 'Без метки'} ${size} ${free}`;
-                    item.onclick = () => selectDrive(drive, item);
-                    container.appendChild(item);
-                });
-            } catch (e) {
-                document.getElementById('drivesList').innerHTML = 
-                    '<p style="color:#e74c3c;">Ошибка загрузки дисков</p>';
-            }
-        }
-        
-        function selectDrive(drive, element) {
-            selectedDrive = drive;
-            
-            // Visual selection
-            document.querySelectorAll('.drive-item').forEach(el => el.classList.remove('selected'));
-            element.classList.add('selected');
-            
-            // Show folder step
-            document.getElementById('folderStep').style.display = 'block';
-            document.getElementById('selectFolderBtn').disabled = false;
-        }
-        
-        async function selectFolder() {
-            showStatus('loading', 'Открываю диалог выбора папки...');
-            
+        // Use server-side folder dialog via API
+        async function selectFolderViaDialog() {
             try {
                 const res = await fetch('/api/setup/select-folder', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({drive_letter: selectedDrive?.drive_letter || ''})
+                    body: JSON.stringify({})
                 });
-                
                 const data = await res.json();
                 
-                if (data.success) {
+                if (data.success && data.selected_path) {
                     selectedPath = data.selected_path;
                     document.getElementById('selectedPath').textContent = `Выбрано: ${selectedPath}`;
                     document.getElementById('actionStep').style.display = 'block';
                     document.getElementById('scanBtn').disabled = false;
-                    hideStatus();
-                } else {
-                    showStatus('error', data.message || 'Выбор отменен');
                 }
             } catch (e) {
-                showStatus('error', 'Ошибка при выборе папки: ' + e.message);
+                showStatus('error', 'Ошибка: ' + e.message);
             }
         }
+        
+        // Override button click to use server dialog
+        document.getElementById('selectFolderBtn').onclick = selectFolderViaDialog;
         
         async function saveAndScan() {
             document.getElementById('scanBtn').disabled = true;
@@ -284,14 +234,26 @@
                 });
                 
                 if (!saveRes.ok) {
-                    throw new Error('Failed to save path');
+                    const errorData = await saveRes.json().catch(() => ({}));
+                    throw new Error(errorData.detail || errorData.message || 'Failed to save path');
                 }
                 
                 showStatus('loading', 'Сканирование библиотеки...');
                 document.getElementById('progress').style.display = 'block';
                 
-                // Start scan
-                const scanRes = await fetch('/api/setup/scan', {method: 'POST'});
+                // Start scan - send path directly to avoid config reload issues
+                const scanRes = await fetch('/api/setup/scan', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: selectedPath})
+                });
+                
+                // Check if response is JSON
+                const contentType = scanRes.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Сервер вернул неправильный ответ. Возможно, папка не содержит книг или произошла ошибка на сервере.');
+                }
+                
                 const scanData = await scanRes.json();
                 
                 if (scanData.success) {
@@ -304,12 +266,25 @@
                         window.location.href = '/';
                     }, 2000);
                 } else {
-                    throw new Error(scanData.message);
+                    throw new Error(scanData.message || 'Неизвестная ошибка при сканировании');
                 }
             } catch (e) {
-                showStatus('error', 'Ошибка: ' + e.message);
+                console.error('Scan error:', e);
+                let errorMessage = e.message || 'Неизвестная ошибка';
+                
+                // Provide more user-friendly error messages
+                if (errorMessage.includes('Failed to fetch') || errorMessage.includes('NetworkError')) {
+                    errorMessage = 'Не удалось подключиться к серверу. Проверьте, что сервер запущен.';
+                } else if (errorMessage.includes('Path does not exist')) {
+                    errorMessage = 'Выбранная папка не существует или недоступна.';
+                } else if (errorMessage.includes('DEFAULT_SOURCE_PATH')) {
+                    errorMessage = 'Ошибка конфигурации сервера. DEFAULT_SOURCE_PATH не настроен.';
+                }
+                
+                showStatus('error', 'Ошибка: ' + errorMessage);
                 document.getElementById('scanBtn').disabled = false;
                 document.getElementById('skipBtn').disabled = false;
+                document.getElementById('progress').style.display = 'none';
             }
         }
         
@@ -326,7 +301,19 @@
         function showStatus(type, message) {
             const status = document.getElementById('status');
             status.className = 'status ' + type;
-            status.textContent = message;
+            
+            // Add retry button for errors
+            if (type === 'error') {
+                status.innerHTML = `
+                    <div>${message}</div>
+                    <button onclick="retryScan()" style="margin-top:10px;padding:8px 16px;background:#3498db;color:white;border:none;border-radius:4px;cursor:pointer;">
+                        Повторить попытку
+                    </button>
+                `;
+            } else {
+                status.textContent = message;
+            }
+            
             status.style.display = 'block';
         }
         
@@ -334,13 +321,14 @@
             document.getElementById('status').style.display = 'none';
         }
         
+        async function retryScan() {
+            document.getElementById('status').style.display = 'none';
+            await saveAndScan();
+        }
+        
         // Event listeners
-        document.getElementById('selectFolderBtn').onclick = selectFolder;
         document.getElementById('scanBtn').onclick = saveAndScan;
         document.getElementById('skipBtn').onclick = skipSetup;
-        
-        // Init
-        loadDrives();
     </script>
 </body>
 </html>

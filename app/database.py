@@ -496,9 +496,11 @@ async def upsert_source_by_identifier(db: aiosqlite.Connection, source_data: dic
 
 
 async def delete_source(db: aiosqlite.Connection, source_id: int):
-    await db.execute(
-        "UPDATE books SET source_id = NULL WHERE source_id = ?", (source_id,)
-    )
+    # Сначала удаляем все книги, связанные с этим хранилищем
+    # book_tags удалятся автоматически благодаря ON DELETE CASCADE
+    # books_fts обновится автоматически благодаря триггеру books_ad
+    await db.execute("DELETE FROM books WHERE source_id = ?", (source_id,))
+    # Затем удаляем само хранилище
     await db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
     await db.commit()
 

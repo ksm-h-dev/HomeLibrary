@@ -11,6 +11,7 @@ from app.models import (
     FolderSelectResponse,
     InitialScanResponse,
     SavePathRequest,
+    InitializeLibraryResponse,
 )
 from config import DEFAULT_SOURCE_PATH
 from services.drives import discover_drives
@@ -30,8 +31,10 @@ async def get_setup_status(db: aiosqlite.Connection = Depends(get_db)):
     # First run if: no sources AND no books
     is_first_run = total_sources == 0 and total_books == 0
 
-    # Needs setup if first run OR if we have default path but no sources
-    needs_setup = is_first_run
+    # Needs setup if first run OR if we have valid default path but no sources to scan from
+    # Show setup wizard if there's a default path that could be used but no sources exist yet
+    config_has_path = DEFAULT_SOURCE_PATH and os.path.exists(DEFAULT_SOURCE_PATH)
+    needs_setup = is_first_run or (config_has_path and total_sources == 0)
 
     return SetupStatus(
         is_first_run=is_first_run,
@@ -116,10 +119,11 @@ async def save_default_path(body: SavePathRequest):
     path = body.path
     try:
         if not os.path.exists(path):
-            raise HTTPException(status_code=400, detail="Path does not exist")
+            raise HTTPException(status_code=400, detail="Папка не существует")
 
         # Update config.py file
         config_path = Path(__file__).parent.parent.parent / "config.py"
+
         if config_path.exists():
             with open(config_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -127,47 +131,64 @@ async def save_default_path(body: SavePathRequest):
             # Escape backslashes for regex replacement
             escaped_path = path.replace("\\", "\\\\")
 
-            # Replace DEFAULT_SOURCE_PATH line
+            # Replace DEFAULT_SOURCE_PATH line - match both formats
             import re
 
-            pattern = r"DEFAULT_SOURCE_PATH\s*=\s*os\.getenv\([^)]+\)"
+            # Try to find and replace the existing DEFAULT_SOURCE_PATH line
+            pattern = r"DEFAULT_SOURCE_PATH\s*=\s*.*$"
             replacement = f'DEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", r"{escaped_path}")'
 
-            if re.search(pattern, content):
-                content = re.sub(pattern, replacement, content)
+            if re.search(pattern, content, re.MULTILINE):
+                content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
             else:
                 # Add if not exists
-                content = content.replace(
-                    "# First run configuration",
-                    f'# First run configuration\nDEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", r"{escaped_path}")  # Added by setup',
+                content = (
+                    content
+                    + f'\nDEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", r"{escaped_path}")  # Added by setup\n'
                 )
 
             with open(config_path, "w", encoding="utf-8") as f:
                 f.write(content)
 
-        return {"success": True, "path": path}
+        return {"success": True, "path": path, "message": "Путь сохранен"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Ошибка сохранения: {str(e)}")
 
 
 @router.post("/scan", response_model=InitialScanResponse)
-async def perform_initial_scan(db: aiosqlite.Connection = Depends(get_db)):
-    """Perform initial scan of DEFAULT_SOURCE_PATH"""
+async def perform_initial_scan(
+    db: aiosqlite.Connection = Depends(get_db), body: SavePathRequest = None
+):
+    """Perform initial scan of DEFAULT_SOURCE_PATH or provided path"""
     from services.importer import import_from_source
+    import config
 
-    if not DEFAULT_SOURCE_PATH:
+    # Try to use path from request body first, then fall back to config
+    current_path = None
+
+    if body and body.path:
+        current_path = body.path
+    else:
+        # Reload config to get the latest DEFAULT_SOURCE_PATH
+        import importlib
+
+        importlib.reload(config)
+        current_path = config.DEFAULT_SOURCE_PATH
+
+    if not current_path:
         raise HTTPException(
-            status_code=400, detail="DEFAULT_SOURCE_PATH not configured"
+            status_code=400,
+            detail="Путь к библиотеке не настроен. Выберите папку с книгами.",
         )
 
-    if not os.path.exists(DEFAULT_SOURCE_PATH):
+    if not os.path.exists(current_path):
         raise HTTPException(
-            status_code=400, detail=f"Path does not exist: {DEFAULT_SOURCE_PATH}"
+            status_code=400, detail=f"Папка не существует: {current_path}"
         )
 
     try:
         # Import with source_id=None to create new source
-        result = await import_from_source(None, DEFAULT_SOURCE_PATH)
+        result = await import_from_source(None, current_path)
 
         return InitialScanResponse(
             success=True,
@@ -176,13 +197,53 @@ async def perform_initial_scan(db: aiosqlite.Connection = Depends(get_db)):
             imported=result.get("imported", 0),
             updated=result.get("updated", 0),
             skipped=result.get("skipped", 0),
-            message=f"Scan completed: {result.get('imported', 0)} new books imported",
+            message=f"Сканирование завершено: импортировано {result.get('imported', 0)} новых книг",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(
+            status_code=500, detail=f"Ошибка при сканировании: {str(e)}"
+        )
 
 
 @router.post("/skip")
 async def skip_setup():
     """Skip initial setup - will have empty library"""
     return {"success": True, "message": "Setup skipped. You can add sources later."}
+
+
+@router.post("/initialize")
+async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
+    """Reset library to initial state - delete all books and sources"""
+    try:
+        # Count items before deletion for response
+        cursor = await db.execute("SELECT COUNT(*) FROM books")
+        books_count = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM sources")
+        sources_count = (await cursor.fetchone())[0]
+
+        # Delete all books first (cascades to book_tags via ON DELETE CASCADE)
+        await db.execute("DELETE FROM books")
+
+        # Delete all sources
+        await db.execute("DELETE FROM sources")
+
+        # Delete all categories (optional - keeping them might be useful)
+        # await db.execute("DELETE FROM categories")
+
+        # Clear FTS index by deleting all entries (triggers will handle this but FTS table needs manual cleanup)
+        await db.execute("DELETE FROM books_fts")
+
+        await db.commit()
+
+        return {
+            "success": True,
+            "message": "Library initialized successfully",
+            "books_deleted": books_count,
+            "sources_deleted": sources_count,
+        }
+    except Exception as e:
+        await db.rollback()
+        raise HTTPException(
+            status_code=500, detail=f"Failed to initialize library: {str(e)}"
+        )

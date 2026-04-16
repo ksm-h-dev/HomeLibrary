@@ -3,21 +3,19 @@
 ## Quick Start
 
 ```powershell
-cd C:\Library
-.\start_server.cmd
+cd H:\Work.Py\HomeLibrary
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Или вручную:
+Или использовать скрипт:
 ```powershell
-pip install -r requirements.txt
-python reset_db.py
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+.\start_server.cmd
 ```
 
 ## Project Structure
 
 ```
-C:\Library\
+H:\Work.Py\HomeLibrary\
 ├── app/
 │   ├── main.py            # FastAPI entry point, startup events
 │   ├── database.py        # SQLite + FTS5 full-text search
@@ -36,7 +34,8 @@ C:\Library\
 │   └── setup.html         # First-run setup wizard
 ├── config.py              # Configuration
 ├── start_server.cmd      # Quick start script
-└── library.db             # SQLite database (created on first run)
+├── library.db             # SQLite database
+└── requirements.txt     # Python dependencies
 ```
 
 ## Key Files
@@ -65,20 +64,22 @@ C:\Library\
 
 Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 
-**Identification priority:**
-1. `catalog.json` → `id` field (preferred for portable media)
-2. Volume label (Windows drive label)
+**Удаление хранилища:** При удалении хранилища удаляются все связанные книги (каскадное удаление).
+
+**Идентификация:**
+1. `catalog.json` → `id` поле (предпочтительно для съемных носителей)
+2. Volume label (метка тома Windows)
 3. Path fallback
 
-**Upsert behavior:** On rescan, existing books are updated (all fields) not duplicated.
+**Upsert behavior:** При повторном сканировании существующие книги обновляются, а не дублируются.
 
-## First Run
+## First Run (Автозапуск)
 
 ```
-1. Server starts → check_initial_setup()
-2. If sources=0 AND DEFAULT_SOURCE_PATH configured → auto-import
-3. User opens / → checkSetup() in JS
-4. If needs_setup → redirect to /setup
+1. Server starts → checkSetup() в JavaScript
+2. Проверка: sources=0 и DEFAULT_SOURCE_PATH настроен?
+3. Если да → спросить "Автоматически просканировать?"
+4. Если нет/отказ → переход к /setup
 5. User selects folder → /api/setup/save-path
 6. Scan runs → books imported with source_id
 7. Redirect to /
@@ -100,6 +101,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/sources` | GET/POST | List/add storage sources |
 | `/api/sources/{id}` | GET/PUT/DELETE | Source CRUD |
 | `/api/sources/{id}/scan` | POST | Scan source and import books |
+| `/api/sources/{id}/books` | GET | Books in source |
 | `/api/sources/discover` | GET | Auto-detect Windows drives |
 | `/api/setup/status` | GET | Setup status |
 | `/api/setup/drives` | GET | Available drives |
@@ -107,6 +109,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/setup/save-path` | POST | Save path to config.py |
 | `/api/setup/scan` | POST | Initial scan |
 | `/api/setup/skip` | POST | Skip setup |
+| `/api/setup/initialize` | POST | Reset library (delete all) |
 
 ## Search
 
@@ -117,10 +120,26 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 ## Configuration (config.py)
 
 ```python
-BOOKS_DIR = "C:/Book/"           # CLI import path
-DATABASE_URL = "library.db"      # DB path
-SERVER_HOST = "0.0.0.0"         # LAN access
-SERVER_PORT = 8000              # Port
-DEFAULT_SOURCE_PATH = ""         # Auto-import path (set manually)
-SHOW_WELCOME = "true"           # Show welcome on first run
+import os
+
+BOOKS_DIR = os.getenv("LIBRARY_BOOKS_DIR", "H:/Book/")
+DATABASE_URL = os.getenv("LIBRARY_DB", "library.db")
+SERVER_HOST = os.getenv("LIBRARY_HOST", "0.0.0.0")
+SERVER_PORT = int(os.getenv("LIBRARY_PORT", "8000"))
+
+DEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", "H:/Book")
+SHOW_WELCOME = os.getenv("LIBRARY_SHOW_WELCOME", "true")
+
+SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf"]
+SUPPORTED_METADATA_EXT = ["txt", "html"]
+COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif"]
 ```
+
+## Features
+
+- **Full-text search** с использованием SQLite FTS5
+- **Каскадное удаление** хранилищ и книг
+- **Инициализация библиотеки** - полный сброс базы данных
+- **Автосканирование** при первом запуске с конфигом
+- **Метаданные** - поддержка KOI8-R, CP1251 кодировок
+- **Категория** - определяется по имени папки

@@ -70,13 +70,24 @@ async def edit_source(
     return await get_source_by_id(db, source_id)
 
 
-@router.delete("/{source_id}", status_code=204)
+@router.delete("/{source_id}")
 async def remove_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)):
     existing = await get_source_by_id(db, source_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Source not found")
 
+    # Получаем количество книг перед удалением
+    books_count = existing.get("books_count", 0)
+    source_name = existing.get("name", "")
+
     await delete_source(db, source_id)
+
+    return {
+        "message": f"Source '{source_name}' and {books_count} associated books deleted successfully",
+        "source_id": source_id,
+        "source_name": source_name,
+        "books_deleted": books_count,
+    }
 
 
 @router.get("/{source_id}/books", response_model=BookListResponse)

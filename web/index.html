@@ -175,6 +175,34 @@
                         <div style="margin-top:15px;">
                             <button class="btn-primary" onclick="changeLibraryPath()">Изменить папку</button>
                         </div>
+                        <div style="margin-top:20px;border-top:1px solid #ddd;padding-top:15px;">
+                            <p><strong>Инициализация библиотеки:</strong></p>
+                            <p style="color:#999;font-size:13px;margin-bottom:10px;">Полный сброс базы данных. Все данные о книгах и хранилищах будут удалены.</p>
+                            <button onclick="openInitLibraryModal()" style="background:#e74c3c;color:white;padding:8px 16px;border:none;border-radius:4px;cursor:pointer;">Инициализировать библиотеку</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Modal для инициализации библиотеки -->
+            <div id="initLibraryModal" class="modal">
+                <div class="modal-content" style="max-width:400px;border-left:4px solid #e74c3c;">
+                    <span class="modal-close" onclick="closeInitLibraryModal()">&times;</span>
+                    <h3 style="color:#e74c3c;">Внимание!</h3>
+                    <p>Вы собираетесь <strong>полностью инициализировать библиотеку</strong>.</p>
+                    <p style="color:#c0392b;font-weight:bold;margin:15px 0;background:#ffeaa7;padding:10px;border-radius:4px;">
+                        Все данные о книгах и хранилищах будут безвозвратно удалены!
+                    </p>
+                    <p>После инициализации потребуется:</p>
+                    <ul style="margin:10px 0 15px 20px;color:#666;">
+                        <li>Повторно добавить все хранилища</li>
+                        <li>Повторно просканировать все диски</li>
+                        <li>Потеряны все настройки каталога</li>
+                    </ul>
+                    <p style="font-size:12px;color:#999;margin-bottom:15px;">Это действие нельзя отменить.</p>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;">
+                        <button onclick="closeInitLibraryModal()" style="padding:8px 16px;background:#95a5a6;color:white;border:none;border-radius:4px;cursor:pointer;">Отмена</button>
+                        <button onclick="confirmInitLibrary()" style="padding:8px 16px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">Да, инициализировать</button>
                     </div>
                 </div>
             </div>
@@ -573,12 +601,15 @@
         }
         
         async function deleteSource(sourceId) {
-            if (!confirm('Удалить хранилище из каталога? Книги останутся на диске.')) return;
+            if (!confirm('Удалить хранилище и все связанные книги из базы данных?')) return;
             
             try {
-                await fetch(`/api/sources/${sourceId}`, {method: 'DELETE'});
+                const res = await fetch(`/api/sources/${sourceId}`, {method: 'DELETE'});
+                const data = await res.json();
+                alert(data.message || 'Хранилище удалено');
                 loadSources();
                 loadStats();
+                loadBooks();  // Обновить список книг
             } catch (e) { console.error(e); }
         }
         
@@ -647,14 +678,66 @@
             }
         }
         
+        function openInitLibraryModal() {
+            document.getElementById('initLibraryModal').classList.add('active');
+        }
+        
+        function closeInitLibraryModal() {
+            document.getElementById('initLibraryModal').classList.remove('active');
+        }
+        
+        async function confirmInitLibrary() {
+            try {
+                const res = await fetch('/api/setup/initialize', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    closeInitLibraryModal();
+                    alert(`Библиотека успешно инициализирована!\n\nУдалено:\n- ${data.books_deleted} книг\n- ${data.sources_deleted} хранилищ\n\nСтраница будет перезагружена.`);
+                    window.location.reload();
+                } else {
+                    alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
+                }
+            } catch (e) {
+                alert('Ошибка: ' + e.message);
+            }
+        }
+        
         async function checkSetup() {
             try {
                 const res = await fetch('/api/setup/status');
                 const data = await res.json();
                 
                 if (data.needs_setup) {
-                    window.location.href = '/setup';
-                    return false;
+                    // If config has path and no sources - try to auto-scan
+                    if (data.default_source_path && data.total_sources === 0 && data.total_books === 0) {
+                        const confirmScan = confirm(
+                            'Найдена папка с книгами: ' + data.default_source_path + '\n\n' +
+                            'Автоматически просканировать её?'
+                        );
+                        if (confirmScan) {
+                            // Trigger initial scan
+                            try {
+                                await fetch('/api/setup/scan', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/json'},
+                                    body: JSON.stringify({path: data.default_source_path})
+                                });
+                            } catch (e) {
+                                console.error('Auto-scan failed:', e);
+                            }
+                        }
+                    }
+                    
+                    // If still needs setup after potential scan, go to wizard
+                    if (data.total_sources === 0) {
+                        window.location.href = '/setup';
+                        return false;
+                    }
                 }
                 return true;
             } catch (e) {

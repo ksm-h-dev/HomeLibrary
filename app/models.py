@@ -152,3 +152,10 @@ class InitialScanResponse(BaseModel):
 
 class SavePathRequest(BaseModel):
     path: str
+
+
+class InitializeLibraryResponse(BaseModel):
+    success: bool
+    message: str
+    books_deleted: int
+    sources_deleted: int

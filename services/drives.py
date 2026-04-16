@@ -15,11 +15,13 @@ async def discover_drives() -> list[DiscoveredDrive]:
             [
                 "powershell",
                 "-Command",
-                "Get-WmiObject Win32_LogicalDisk | Select-Object DeviceID, VolumeName, DriveType, FileSystem, Size, FreeSpace | ConvertTo-Json",
+                "Get-WmiObject Win32_LogicalDisk | Select-Object DeviceID, VolumeName, DriveType, FileSystem, Size, FreeSpace | ConvertTo-Json -Compress",
             ],
             capture_output=True,
             text=True,
             timeout=30,
+            encoding="utf-8",
+            errors="replace",
         )
 
         if result.returncode == 0 and result.stdout.strip():
@@ -32,12 +34,29 @@ async def discover_drives() -> list[DiscoveredDrive]:
 
             for disk in data:
                 drive_type = DRIVE_TYPE_MAP.get(disk.get("DriveType", 0), "unknown")
+                volume_label = disk.get("VolumeName") or ""
+                device_id = disk.get("DeviceID", "").rstrip(":")
 
-                if drive_type in ["fixed", "removable", "network"]:
+                # Show removable, network, and any fixed drives with a volume label
+                show_drive = False
+
+                # Skip system drive C:
+                if device_id == "C":
+                    show_drive = False
+                elif drive_type in ["removable", "network"]:
+                    show_drive = True
+                elif (
+                    drive_type == "fixed"
+                    and volume_label
+                    and len(volume_label.strip()) > 0
+                ):
+                    show_drive = True
+
+                if show_drive:
                     drives.append(
                         DiscoveredDrive(
-                            drive_letter=disk.get("DeviceID", "").rstrip(":"),
-                            label=disk.get("VolumeName"),
+                            drive_letter=device_id,
+                            label=volume_label,
                             type=drive_type,
                             total_size=_safe_int(disk.get("Size")),
                             free_space=_safe_int(disk.get("FreeSpace")),
