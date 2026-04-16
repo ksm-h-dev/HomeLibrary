@@ -119,3 +119,36 @@ class StatsResponse(BaseModel):
 class BookListResponse(BaseModel):
     total: int
     books: list
+
+
+class SetupStatus(BaseModel):
+    is_first_run: bool
+    default_source_path: str
+    has_books: bool
+    total_books: int
+    total_sources: int
+    needs_setup: bool
+
+
+class FolderSelectRequest(BaseModel):
+    drive_letter: str = ""
+
+
+class FolderSelectResponse(BaseModel):
+    selected_path: str
+    success: bool
+    message: str
+
+
+class InitialScanResponse(BaseModel):
+    success: bool
+    source_id: int
+    scanned: int
+    imported: int
+    updated: int
+    skipped: int
+    message: str
+
+
+class SavePathRequest(BaseModel):
+    path: str

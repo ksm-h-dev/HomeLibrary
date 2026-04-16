@@ -268,10 +268,11 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         book["category_id"] = category_id
         book["source_id"] = source_id
 
-        existing = await db.execute(
+        cursor = await db.execute(
             "SELECT id FROM books WHERE source_id = ? AND relative_path = ?",
             (source_id, book["relative_path"]),
-        ).fetchone()
+        )
+        existing = await cursor.fetchone()
 
         book_id = await upsert_book(db, book)
 

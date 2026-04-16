@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Первичная настройка - Домашний библиотекарь</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 64px;
+            margin-bottom: 10px;
+        }
+        h1 {
+            color: #2c3e50;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 16px;
+        }
+        .step {
+            margin-bottom: 25px;
+        }
+        .step-label {
+            display: block;
+            color: #2c3e50;
+            font-weight: bold;
+            margin-bottom: 10px;
+            font-size: 15px;
+        }
+        select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 15px;
+            background: white;
+            cursor: pointer;
+        }
+        select:focus {
+            border-color: #3498db;
+            outline: none;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+        .btn-primary:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+        .btn-secondary {
+            background: #ecf0f1;
+            color: #666;
+            margin-top: 10px;
+        }
+        .btn-secondary:hover {
+            background: #d5dbdb;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.loading {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+        .progress {
+            margin-top: 15px;
+        }
+        .progress-bar {
+            height: 8px;
+            background: #ecf0f1;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #3498db;
+            transition: width 0.3s;
+        }
+        .drives-list {
+            margin-top: 10px;
+        }
+        .drive-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .drive-item:hover {
+            background: #e9ecef;
+        }
+        .drive-item.selected {
+            background: #3498db;
+            color: white;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #999;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">📚</div>
+            <h1>Добро пожаловать!</h1>
+            <p class="subtitle">Давайте настроим вашу библиотеку</p>
+        </div>
+        
+        <div id="setupContent">
+            <div class="step">
+                <label class="step-label">1. Выберите диск или источник</label>
+                <div id="drivesList" class="drives-list">
+                    <p style="color:#999;">Загрузка дисков...</p>
+                </div>
+            </div>
+            
+            <div class="step" id="folderStep" style="display:none;">
+                <label class="step-label">2. Выберите папку с книгами</label>
+                <button id="selectFolderBtn" class="btn-primary" disabled>
+                    📁 Выбрать папку
+                </button>
+                <p id="selectedPath" style="margin-top:10px;color:#666;font-size:13px;"></p>
+            </div>
+            
+            <div class="step" id="actionStep" style="display:none;">
+                <label class="step-label">3. Действие</label>
+                <button id="scanBtn" class="btn-primary" disabled>
+                    🔍 Начать сканирование
+                </button>
+                <button id="skipBtn" class="btn-secondary">
+                    ⏭️ Пропустить (добавить позже)
+                </button>
+            </div>
+        </div>
+        
+        <div id="status" class="status"></div>
+        
+        <div id="progress" class="progress" style="display:none;">
+            <div class="progress-bar">
+                <div class="progress-fill" style="width:0%"></div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            Домашний библиотекарь v1.0.0
+        </div>
+    </div>
+
+    <script>
+        let selectedDrive = null;
+        let selectedPath = '';
+        
+        async function loadDrives() {
+            try {
+                const res = await fetch('/api/setup/drives');
+                const drives = await res.json();
+                
+                const container = document.getElementById('drivesList');
+                container.innerHTML = '';
+                
+                if (drives.length === 0) {
+                    container.innerHTML = '<p style="color:#999;">Диски не обнаружены</p>';
+                    return;
+                }
+                
+                drives.forEach(drive => {
+                    const item = document.createElement('div');
+                    item.className = 'drive-item';
+                    const size = drive.total_size ? Math.round(drive.total_size / 1024**3) + ' GB' : '';
+                    const free = drive.free_space ? Math.round(drive.free_space / 1024**3) + ' GB свободно' : '';
+                    item.innerHTML = `<strong>${drive.drive_letter}:</strong> ${drive.label || 'Без метки'} ${size} ${free}`;
+                    item.onclick = () => selectDrive(drive, item);
+                    container.appendChild(item);
+                });
+            } catch (e) {
+                document.getElementById('drivesList').innerHTML = 
+                    '<p style="color:#e74c3c;">Ошибка загрузки дисков</p>';
+            }
+        }
+        
+        function selectDrive(drive, element) {
+            selectedDrive = drive;
+            
+            // Visual selection
+            document.querySelectorAll('.drive-item').forEach(el => el.classList.remove('selected'));
+            element.classList.add('selected');
+            
+            // Show folder step
+            document.getElementById('folderStep').style.display = 'block';
+            document.getElementById('selectFolderBtn').disabled = false;
+        }
+        
+        async function selectFolder() {
+            showStatus('loading', 'Открываю диалог выбора папки...');
+            
+            try {
+                const res = await fetch('/api/setup/select-folder', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({drive_letter: selectedDrive?.drive_letter || ''})
+                });
+                
+                const data = await res.json();
+                
+                if (data.success) {
+                    selectedPath = data.selected_path;
+                    document.getElementById('selectedPath').textContent = `Выбрано: ${selectedPath}`;
+                    document.getElementById('actionStep').style.display = 'block';
+                    document.getElementById('scanBtn').disabled = false;
+                    hideStatus();
+                } else {
+                    showStatus('error', data.message || 'Выбор отменен');
+                }
+            } catch (e) {
+                showStatus('error', 'Ошибка при выборе папки: ' + e.message);
+            }
+        }
+        
+        async function saveAndScan() {
+            document.getElementById('scanBtn').disabled = true;
+            document.getElementById('skipBtn').disabled = true;
+            showStatus('loading', 'Сохранение настроек...');
+            
+            try {
+                // Save path
+                const saveRes = await fetch('/api/setup/save-path', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({path: selectedPath})
+                });
+                
+                if (!saveRes.ok) {
+                    throw new Error('Failed to save path');
+                }
+                
+                showStatus('loading', 'Сканирование библиотеки...');
+                document.getElementById('progress').style.display = 'block';
+                
+                // Start scan
+                const scanRes = await fetch('/api/setup/scan', {method: 'POST'});
+                const scanData = await scanRes.json();
+                
+                if (scanData.success) {
+                    document.querySelector('.progress-fill').style.width = '100%';
+                    showStatus('success', 
+                        `Готово! Импортировано: ${scanData.imported} новых, ` +
+                        `${scanData.updated} обновлено.`);
+                    
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 2000);
+                } else {
+                    throw new Error(scanData.message);
+                }
+            } catch (e) {
+                showStatus('error', 'Ошибка: ' + e.message);
+                document.getElementById('scanBtn').disabled = false;
+                document.getElementById('skipBtn').disabled = false;
+            }
+        }
+        
+        async function skipSetup() {
+            try {
+                await fetch('/api/setup/skip', {method: 'POST'});
+                window.location.href = '/';
+            } catch (e) {
+                console.error(e);
+                window.location.href = '/';
+            }
+        }
+        
+        function showStatus(type, message) {
+            const status = document.getElementById('status');
+            status.className = 'status ' + type;
+            status.textContent = message;
+            status.style.display = 'block';
+        }
+        
+        function hideStatus() {
+            document.getElementById('status').style.display = 'none';
+        }
+        
+        // Event listeners
+        document.getElementById('selectFolderBtn').onclick = selectFolder;
+        document.getElementById('scanBtn').onclick = saveAndScan;
+        document.getElementById('skipBtn').onclick = skipSetup;
+        
+        // Init
+        loadDrives();
+    </script>
+</body>
+</html>

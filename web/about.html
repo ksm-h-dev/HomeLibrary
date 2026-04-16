@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>О программе - Домашний библиотекарь</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { 
+            font-family: 'Segoe UI', Tahoma, sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            background: white;
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo {
+            font-size: 64px;
+            margin-bottom: 10px;
+        }
+        h1 {
+            color: #2c3e50;
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .version {
+            color: #3498db;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 20px;
+        }
+        .description {
+            color: #555;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .features {
+            margin-bottom: 30px;
+        }
+        .features h2 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 20px;
+        }
+        .features ul {
+            list-style: none;
+            padding-left: 0;
+        }
+        .features li {
+            padding: 8px 0;
+            color: #555;
+            font-size: 15px;
+        }
+        .features li:before {
+            content: "✓ ";
+            color: #27ae60;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        .tech {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .tech h2 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+            font-size: 18px;
+        }
+        .tech p {
+            color: #666;
+            font-size: 14px;
+        }
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background: #3498db;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 16px;
+            transition: background 0.2s;
+        }
+        .btn:hover {
+            background: #2980b9;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            color: #999;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">📚</div>
+            <h1>Домашний библиотекарь</h1>
+            <div class="version">Версия 1.0.0</div>
+        </div>
+        
+        <p class="description">
+            Веб-приложение для управления электронной библиотекой. 
+            Позволяет каталогизировать книги, искать по названию и автору, 
+            управлять хранилищами на разных носителях (HDD, SSD, DVD, NAS).
+        </p>
+        
+        <div class="features">
+            <h2>Возможности</h2>
+            <ul>
+                <li>Полнотекстовый поиск по названию, автору, описанию</li>
+                <li>Поддержка PDF, DJVU, EPUB, FB2, RAR, ZIP</li>
+                <li>Управление несколькими хранилищами</li>
+                <li>Автоопределение подключенных дисков</li>
+                <li>Идентификация носителей по метке тома или catalog.json</li>
+                <li>Обложки книг и метаданные</li>
+                <li>Фильтрация по формату, категории, году</li>
+            </ul>
+        </div>
+        
+        <div class="tech">
+            <h2>Технологии</h2>
+            <p>FastAPI • SQLite + FTS5 • Vue.js-like SPA</p>
+        </div>
+        
+        <div style="text-align: center;">
+            <a href="/" class="btn">← На главную</a>
+        </div>
+        
+        <div class="footer">
+            © 2026 Домашний библиотекарь • Open Source
+        </div>
+    </div>
+</body>
+</html>

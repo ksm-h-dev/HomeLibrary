@@ -158,14 +158,14 @@ async def search_books(
 ):
     sql = """
         SELECT b.*, c.name as category_name,
-               highlight(books_fts, 0, '<b>', '</b>') as title_hl,
-               snippet(books_fts, 2, '...', '...', 30) as desc_snippet
+               b.title as title_hl,
+               substr(b.description, 1, 150) as desc_snippet
         FROM books_fts
         JOIN books b ON books_fts.rowid = b.id
         LEFT JOIN categories c ON b.category_id = c.id
         WHERE books_fts MATCH ?
     """
-    params = [f'"{query}"*']
+    params = [f"{query}*"]
 
     if format:
         sql += " AND b.format = ?"
@@ -189,7 +189,7 @@ async def search_books(
         LEFT JOIN categories c ON b.category_id = c.id
         WHERE books_fts MATCH ?
     """
-    count_params = [f'"{query}"*']
+    count_params = [f"{query}*"]
     if format:
         count_sql += " AND b.format = ?"
         count_params.append(format)
