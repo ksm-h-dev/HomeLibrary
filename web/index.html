@@ -320,10 +320,19 @@
                 if (category) url += `&category=${encodeURIComponent(category)}`;
                 if (year) url += `&year=${year}`;
                 if (sourceId) url += `&source_id=${sourceId}`;
-                if (sortBy) url += `&sort_by=${sortBy}`;
+                if (sortBy && sortBy !== 'date') url += `&sort_by=${sortBy}`;
+                
+                console.log('Fetching:', url);
                 
                 const res = await fetch(url);
+                if (!res.ok) {
+                    const err = await res.text();
+                    console.error('API Error:', res.status, err);
+                    loading.style.display = 'none';
+                    return;
+                }
                 const data = await res.json();
+                console.log('Loaded books:', data.total);
                 
                 loading.style.display = 'none';
                 totalBooks = data.total;
@@ -386,12 +395,21 @@
                 const sortBy = document.getElementById('sortFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
-                if (year) url += `&year=${parseInt(year)}`;
+                if (year) url += `&year=${year}`;
                 if (sourceId) url += `&source_id=${sourceId}`;
-                if (sortBy) url += `&sort_by=${sortBy}`;
+                if (sortBy && sortBy !== 'date') url += `&sort_by=${sortBy}`;
+                
+                console.log('Search URL:', url);
                 
                 const res = await fetch(url);
+                if (!res.ok) {
+                    const err = await res.text();
+                    console.error('Search API Error:', res.status, err);
+                    loading.style.display = 'none';
+                    return;
+                }
                 const data = await res.json();
+                console.log('Search results:', data.total);
                 
                 loading.style.display = 'none';
                 totalBooks = data.total;
