@@ -102,8 +102,21 @@ async def init_db():
         await db.commit()
 
 
+SORT_OPTIONS = {
+    "date": "b.id DESC",
+    "title": "b.title ASC",
+    "author": "b.author ASC",
+    "year": "b.year DESC",
+    "pages": "b.pages DESC",
+}
+
+
 async def get_all_books(
-    db: aiosqlite.Connection, limit: int = 20, offset: int = 0, category: str = None
+    db: aiosqlite.Connection,
+    limit: int = 20,
+    offset: int = 0,
+    category: str = None,
+    sort_by: str = "date",
 ):
     query = """
         SELECT b.*, c.name as category_name
@@ -114,7 +127,8 @@ async def get_all_books(
     if category:
         query += " WHERE c.name = ?"
         params.append(category)
-    query += " ORDER BY b.id DESC LIMIT ? OFFSET ?"
+    sort_clause = SORT_OPTIONS.get(sort_by, "b.id DESC")
+    query += f" ORDER BY {sort_clause} LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     cursor = await db.execute(query, params)
@@ -155,6 +169,7 @@ async def search_books(
     year: int = None,
     limit: int = 20,
     offset: int = 0,
+    sort_by: str = "date",
 ):
     sql = """
         SELECT b.*, c.name as category_name,
@@ -165,6 +180,7 @@ async def search_books(
         LEFT JOIN categories c ON b.category_id = c.id
         WHERE books_fts MATCH ?
     """
+    sort_clause = SORT_OPTIONS.get(sort_by, "b.id DESC")
     params = [f"{query}*"]
 
     if format:
@@ -177,7 +193,7 @@ async def search_books(
         sql += " AND b.year = ?"
         params.append(year)
 
-    sql += " ORDER BY rank LIMIT ? OFFSET ?"
+    sql += f" ORDER BY {sort_clause} LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
     cursor = await db.execute(sql, params)

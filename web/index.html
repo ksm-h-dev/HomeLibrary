@@ -132,6 +132,13 @@
             
             <div class="search-box">
                 <input type="text" id="searchInput" placeholder="Поиск по названию, автору, описанию...">
+                <select id="sortFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;">
+                    <option value="date">Дата</option>
+                    <option value="title">Название</option>
+                    <option value="author">Автор</option>
+                    <option value="year">Год</option>
+                    <option value="pages">Страниц</option>
+                </select>
                 <button onclick="performSearch()">Найти</button>
             </div>
             
@@ -238,6 +245,7 @@
         let currentPage = 0;
         let totalBooks = 0;
         let currentQuery = '';
+        let currentSort = 'date';
         const limit = 20;
         
         function showTab(tab) {
@@ -299,8 +307,10 @@
                 let url = `/api/books?limit=${limit}&offset=${offset}`;
                 const format = document.getElementById('formatFilter').value;
                 const category = document.getElementById('categoryFilter').value;
+                const sortBy = document.getElementById('sortFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
+                if (sortBy) url += `&sort_by=${sortBy}`;
                 
                 const res = await fetch(url);
                 const data = await res.json();
@@ -355,15 +365,18 @@
             loading.style.display = 'block';
             noResults.style.display = 'none';
             currentQuery = query;
+            currentSort = document.getElementById('sortFilter').value;
             
             try {
                 let url = `/api/search?q=${encodeURIComponent(query)}&limit=${limit}`;
                 const format = document.getElementById('formatFilter').value;
                 const category = document.getElementById('categoryFilter').value;
                 const year = document.getElementById('yearFilter').value;
+                const sortBy = document.getElementById('sortFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
                 if (year) url += `&year=${year}`;
+                if (sortBy) url += `&sort_by=${sortBy}`;
                 
                 const res = await fetch(url);
                 const data = await res.json();
@@ -414,6 +427,7 @@
                 if (currentQuery) {
                     searchPage(currentPage - 1);
                 } else {
+                    currentSort = document.getElementById('sortFilter').value;
                     loadBooks((currentPage - 1) * limit);
                 }
             };
@@ -433,6 +447,7 @@
                     if (currentQuery) {
                         searchPage(page);
                     } else {
+                        currentSort = document.getElementById('sortFilter').value;
                         loadBooks(page * limit);
                     }
                 };
@@ -446,6 +461,7 @@
                 if (currentQuery) {
                     searchPage(currentPage + 1);
                 } else {
+                    currentSort = document.getElementById('sortFilter').value;
                     loadBooks((currentPage + 1) * limit);
                 }
             };
@@ -460,6 +476,7 @@
                 let url = `/api/search?q=${encodeURIComponent(currentQuery)}&limit=${limit}&offset=${offset}`;
                 const format = document.getElementById('formatFilter').value;
                 if (format) url += `&format=${format}`;
+                if (currentSort) url += `&sort_by=${currentSort}`;
                 
                 const res = await fetch(url);
                 const data = await res.json();
