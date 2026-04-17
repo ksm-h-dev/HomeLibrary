@@ -116,6 +116,9 @@ async def get_all_books(
     limit: int = 20,
     offset: int = 0,
     category: str = None,
+    format: str = None,
+    year: int = None,
+    source_id: int = None,
     sort_by: str = "date",
 ):
     query = """
@@ -124,9 +127,21 @@ async def get_all_books(
         LEFT JOIN categories c ON b.category_id = c.id
     """
     params = []
+    conditions = []
     if category:
-        query += " WHERE c.name = ?"
+        conditions.append("c.name = ?")
         params.append(category)
+    if format:
+        conditions.append("b.format = ?")
+        params.append(format)
+    if year:
+        conditions.append("b.year = ?")
+        params.append(year)
+    if source_id:
+        conditions.append("b.source_id = ?")
+        params.append(source_id)
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
     sort_clause = SORT_OPTIONS.get(sort_by, "b.id DESC")
     query += f" ORDER BY {sort_clause} LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -134,28 +149,13 @@ async def get_all_books(
     cursor = await db.execute(query, params)
     rows = await cursor.fetchall()
 
+    count_params = params.copy()
+    count_params.pop()
+    count_params.pop()
     cursor = await db.execute(
-        "SELECT COUNT(*) FROM books"
-        + (
-            " WHERE category_id = (SELECT id FROM categories WHERE name = ?)"
-            if category
-            else ""
-        )
-    )
-    total = (await cursor.fetchone())[0]
-
-    return [dict(row) for row in rows], total
-
-
-async def get_book_by_id(db: aiosqlite.Connection, book_id: int):
-    cursor = await db.execute(
-        """
-        SELECT b.*, c.name as category_name
-        FROM books b
-        LEFT JOIN categories c ON b.category_id = c.id
-        WHERE b.id = ?
-    """,
-        (book_id,),
+        "SELECT COUNT(*) FROM books b LEFT JOIN categories c ON b.category_id = c.id"
+        + (" WHERE " + " AND ".join(conditions) if conditions else ""),
+        count_params,
     )
     row = await cursor.fetchone()
     return dict(row) if row else None
@@ -167,6 +167,7 @@ async def search_books(
     format: str = None,
     category: str = None,
     year: int = None,
+    source_id: int = None,
     limit: int = 20,
     offset: int = 0,
     sort_by: str = "date",
@@ -192,6 +193,9 @@ async def search_books(
     if year:
         sql += " AND b.year = ?"
         params.append(year)
+    if source_id:
+        sql += " AND b.source_id = ?"
+        params.append(source_id)
 
     sql += f" ORDER BY {sort_clause} LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -215,6 +219,9 @@ async def search_books(
     if year:
         count_sql += " AND b.year = ?"
         count_params.append(year)
+    if source_id:
+        count_sql += " AND b.source_id = ?"
+        count_params.append(source_id)
 
     cursor = await db.execute(count_sql, count_params)
     total = (await cursor.fetchone())[0]

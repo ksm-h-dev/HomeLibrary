@@ -131,15 +131,14 @@
             </div>
             
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Поиск по названию, автору, описанию...">
-                <select id="sortFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;">
-                    <option value="date">Дата</option>
-                    <option value="title">Название</option>
-                    <option value="author">Автор</option>
-                    <option value="year">Год</option>
-                    <option value="pages">Страниц</option>
+                <select id="actionFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;">
+                    <option value="search">Поиск</option>
+                    <option value="filter">Фильтр</option>
+                    <option value="sort">Сортировка</option>
+                    <option value="reset">Сброс</option>
                 </select>
-                <button onclick="performSearch()">Найти</button>
+                <input type="text" id="searchInput" placeholder="Поиск по названию, автору, описанию...">
+                <button id="actionBtn" onclick="executeAction()">Выполнить</button>
             </div>
             
             <div class="filters">
@@ -158,6 +157,13 @@
                 </select>
                 <select id="sourceFilter">
                     <option value="">Все хранилища</option>
+                </select>
+                <select id="sortFilter">
+                    <option value="date">Дата</option>
+                    <option value="title">Название</option>
+                    <option value="author">Автор</option>
+                    <option value="year">Год</option>
+                    <option value="pages">Страниц</option>
                 </select>
             </div>
             
@@ -307,9 +313,13 @@
                 let url = `/api/books?limit=${limit}&offset=${offset}`;
                 const format = document.getElementById('formatFilter').value;
                 const category = document.getElementById('categoryFilter').value;
+                const year = document.getElementById('yearFilter').value;
+                const sourceId = document.getElementById('sourceFilter').value;
                 const sortBy = document.getElementById('sortFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
+                if (year) url += `&year=${year}`;
+                if (sourceId) url += `&source_id=${sourceId}`;
                 if (sortBy) url += `&sort_by=${sortBy}`;
                 
                 const res = await fetch(url);
@@ -372,10 +382,12 @@
                 const format = document.getElementById('formatFilter').value;
                 const category = document.getElementById('categoryFilter').value;
                 const year = document.getElementById('yearFilter').value;
+                const sourceId = document.getElementById('sourceFilter').value;
                 const sortBy = document.getElementById('sortFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
-                if (year) url += `&year=${year}`;
+                if (year) url += `&year=${parseInt(year)}`;
+                if (sourceId) url += `&source_id=${sourceId}`;
                 if (sortBy) url += `&sort_by=${sortBy}`;
                 
                 const res = await fetch(url);
@@ -475,7 +487,9 @@
             try {
                 let url = `/api/search?q=${encodeURIComponent(currentQuery)}&limit=${limit}&offset=${offset}`;
                 const format = document.getElementById('formatFilter').value;
+                const sourceId = document.getElementById('sourceFilter').value;
                 if (format) url += `&format=${format}`;
+                if (sourceId) url += `&source_id=${sourceId}`;
                 if (currentSort) url += `&sort_by=${currentSort}`;
                 
                 const res = await fetch(url);
@@ -509,6 +523,18 @@
                 const res = await fetch('/api/sources');
                 const data = await res.json();
                 const container = document.getElementById('sourcesList');
+                const sourceFilter = document.getElementById('sourceFilter');
+                
+                while (sourceFilter.options.length > 1) {
+                    sourceFilter.remove(1);
+                }
+                data.forEach(source => {
+                    const opt = document.createElement('option');
+                    opt.value = source.id;
+                    opt.textContent = source.name;
+                    sourceFilter.appendChild(opt);
+                });
+                
                 container.innerHTML = '';
                 
                 if (data.length === 0) {
@@ -644,9 +670,39 @@
         function escapeJs(text) {
             return (text || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
         }
-        
+
+        async function executeAction() {
+            const action = document.getElementById('actionFilter').value;
+            currentPage = 0;
+            currentQuery = '';
+            
+            if (action === 'search') {
+                await performSearch();
+            } else if (action === 'filter') {
+                await loadBooks();
+            } else if (action === 'sort') {
+                await loadBooks();
+            } else if (action === 'reset') {
+                resetFilters();
+            }
+        }
+
+        function resetFilters() {
+            document.getElementById('actionFilter').value = 'search';
+            document.getElementById('searchInput').value = '';
+            document.getElementById('formatFilter').value = '';
+            document.getElementById('categoryFilter').value = '';
+            document.getElementById('yearFilter').value = '';
+            document.getElementById('sourceFilter').value = '';
+            document.getElementById('sortFilter').value = 'date';
+            currentQuery = '';
+            currentSort = 'date';
+            currentPage = 0;
+            loadBooks();
+        }
+
         document.getElementById('searchInput').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') performSearch();
+            if (e.key === 'Enter') executeAction();
         });
         
         function openSettings() {
