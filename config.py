@@ -6,7 +6,7 @@ SERVER_HOST = os.getenv("LIBRARY_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("LIBRARY_PORT", "8000"))
 
 # First run configuration - user can change this manually
-DEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", r"H:\Book")
+DEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", r"C:\Book")
 SHOW_WELCOME = os.getenv("LIBRARY_SHOW_WELCOME", "true")
 
 SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf"]

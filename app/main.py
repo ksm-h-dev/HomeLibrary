@@ -78,6 +78,11 @@ async def setup_page():
     return FileResponse(os.path.join(WEB_DIR, "setup.html"))
 
 
+@app.get("/favicon.ico")
+async def favicon():
+    return FileResponse(os.path.join(WEB_DIR, "favicon.ico"))
+
+
 if __name__ == "__main__":
     import uvicorn
 

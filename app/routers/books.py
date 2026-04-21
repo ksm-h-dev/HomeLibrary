@@ -1,9 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from typing import Optional
 import aiosqlite
+import os
+import subprocess
+import platform
 
-from app.database import get_db, get_all_books, get_book_by_id
-from app.models import BookResponse, BookListResponse
+from app.database import (
+    get_db,
+    get_all_books,
+    get_book_by_id,
+    update_book,
+    get_categories,
+)
+from app.models import BookResponse, BookListResponse, BookUpdate, CategoryResponse
 
 router = APIRouter(prefix="/api/books", tags=["books"])
 
@@ -25,9 +35,51 @@ async def list_books(
     return {"total": total, "books": books}
 
 
+@router.get("/categories")
+async def list_categories(db: aiosqlite.Connection = Depends(get_db)):
+    return await get_categories(db)
+
+
 @router.get("/{book_id}", response_model=BookResponse)
 async def get_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
     book = await get_book_by_id(db, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
     return book
+
+
+@router.put("/{book_id}")
+async def update_book_endpoint(
+    book_id: int,
+    book: BookUpdate,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    existing = await get_book_by_id(db, book_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    await update_book(db, book_id, book.model_dump(exclude_none=True))
+    return await get_book_by_id(db, book_id)
+
+
+@router.post("/{book_id}/open")
+async def open_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    book = await get_book_by_id(db, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    file_path = book.get("file_path", "")
+    if not file_path:
+        raise HTTPException(status_code=400, detail="File path is empty")
+
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if platform.system() == "Windows":
+        os.startfile(file_path)
+    elif platform.system() == "Darwin":
+        subprocess.run(["open", file_path])
+    else:
+        subprocess.run(["xdg-open", file_path])
+
+    return {"success": True, "message": "File opened"}

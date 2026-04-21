@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```powershell
-cd H:\Work.Py\HomeLibrary
+cd С:\Library
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 

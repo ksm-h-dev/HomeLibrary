@@ -26,10 +26,22 @@ class BookCreate(BookBase):
     pass
 
 
+class BookUpdate(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    publisher: Optional[str] = None
+    year: Optional[int] = None
+    pages: Optional[int] = None
+    description: Optional[str] = None
+    category_id: Optional[int] = None
+    language: Optional[str] = None
+
+
 class BookResponse(BookBase):
     id: int
     category_name: Optional[str] = None
     source_name: Optional[str] = None
+    is_available: bool = True
 
     class Config:
         from_attributes = True
@@ -75,6 +87,9 @@ class SourceUpdate(BaseModel):
     catalog_id: Optional[str] = None
     is_active: Optional[bool] = None
     description: Optional[str] = None
+    availability_status: Optional[Literal["available", "unavailable", "archived"]] = (
+        None
+    )
 
 
 class SourceResponse(SourceBase):
@@ -82,6 +97,7 @@ class SourceResponse(SourceBase):
     books_count: int = 0
     last_scanned: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    availability_status: Literal["available", "unavailable", "archived"] = "available"
 
     class Config:
         from_attributes = True

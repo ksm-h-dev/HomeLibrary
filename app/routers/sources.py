@@ -12,6 +12,7 @@ from app.database import (
     delete_source,
     update_source_scan_time,
     get_books_by_source,
+    check_source_availability,
 )
 from app.models import (
     SourceCreate,
@@ -61,13 +62,31 @@ async def edit_source(
     if not existing:
         raise HTTPException(status_code=404, detail="Source not found")
 
-    update_data = source.model_dump(exclude_unset=True)
+    update_data = source.model_dump(exclude_unset=True, exclude_none=True)
     update_data["is_active"] = update_data.get(
         "is_active", existing.get("is_active", True)
     )
 
-    await update_source(db, source_id, update_data)
+    if update_data.get("path") or update_data.get("catalog_id"):
+        status = check_source_availability(update_data)
+        await update_source(
+            db, source_id, {**update_data, "availability_status": status}
+        )
+    else:
+        await update_source(db, source_id, update_data)
     return await get_source_by_id(db, source_id)
+
+
+@router.post("/{source_id}/check")
+async def check_source_status(
+    source_id: int, db: aiosqlite.Connection = Depends(get_db)
+):
+    source = await get_source_by_id(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    status = check_source_availability(source)
+    return {"source_id": source_id, "availability_status": status}
 
 
 @router.delete("/{source_id}")

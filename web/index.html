@@ -18,15 +18,6 @@
         .settings-btn { background: #95a5a6; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; margin-bottom: 15px; }
         .settings-btn:hover { background: #7f8c8d; }
         
-        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
-        .modal.active { display: flex; align-items: center; justify-content: center; }
-        .modal-content { background: white; padding: 30px; border-radius: 8px; max-width: 500px; width: 90%; }
-        .modal-content h3 { margin-bottom: 15px; }
-        .modal-content p { margin-bottom: 10px; color: #666; }
-        .modal-content .btn { margin-right: 10px; }
-        .modal-close { float: right; font-size: 24px; cursor: pointer; color: #999; }
-        .modal-close:hover { color: #333; }
-        
         .nav-tabs { display: flex; gap: 5px; margin-bottom: 20px; }
         .nav-tabs button { padding: 12px 24px; background: #ecf0f1; border: none; border-radius: 8px 8px 0 0; cursor: pointer; font-size: 14px; transition: background 0.2s; }
         .nav-tabs button:hover { background: #d5dbdb; }
@@ -56,6 +47,24 @@
         .book-card .format-badge { display: inline-block; padding: 2px 8px; background: #ecf0f1; border-radius: 4px; font-size: 11px; text-transform: uppercase; }
         .book-card .open-btn { display: block; width: 100%; margin-top: 10px; padding: 8px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; }
         .book-card .open-btn:hover { background: #219a52; }
+        .book-card.unavailable { opacity: 0.6; }
+        .book-card .open-btn.disabled { background: #95a5a6; cursor: not-allowed; }
+        .book-card .edit-btn { position: absolute; top: 10px; right: 10px; background: none; border: none; cursor: pointer; font-size: 18px; color: #3498db; padding: 5px; }
+        .book-card .edit-btn:hover { color: #2980b9; }
+        .book-card { position: relative; }
+        
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
+        .modal-overlay.active { display: block; }
+        .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .modal-overlay.active .modal { display: block; }
+        .modal h2 { margin-top: 0; color: #2c3e50; }
+        .modal .form-group { margin-bottom: 15px; }
+        .modal .form-group label { display: block; margin-bottom: 5px; font-size: 13px; color: #666; }
+        .modal .form-group input, .modal .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .modal .buttons { display: flex; gap: 10px; margin-top: 20px; }
+        .modal .buttons button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+        .modal .buttons .save-btn { background: #27ae60; color: white; }
+        .modal .buttons .cancel-btn { background: #95a5a6; color: white; }
         
         .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 30px; }
         .pagination button { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
@@ -79,6 +88,14 @@
         .source-card .actions .delete-btn { background: #e74c3c; color: white; }
         .source-card .actions .scan-btn:hover { background: #2980b9; }
         .source-card .actions .delete-btn:hover { background: #c0392b; }
+        .source-card .actions .edit-btn { background: #95a5a6; color: white; }
+        .source-card .actions .edit-btn:hover { background: #7f8c8d; }
+        .source-card { position: relative; }
+        
+        .status-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .status-available { background: #d4edda; color: #155724; }
+        .status-unavailable { background: #fff3cd; color: #856404; }
+        .status-archived { background: #e2e3e5; color: #383d41; }
         
         .type-badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 11px; text-transform: uppercase; font-weight: bold; }
         .type-local { background: #2ecc71; color: white; }
@@ -109,6 +126,70 @@
     </style>
 </head>
 <body>
+    <div id="editModal" class="modal-overlay">
+        <div class="modal">
+            <h2>Редактирование книги</h2>
+            <div class="form-group">
+                <label>Название</label>
+                <input type="text" id="editTitle">
+            </div>
+            <div class="form-group">
+                <label>Автор</label>
+                <input type="text" id="editAuthor">
+            </div>
+            <div class="form-group">
+                <label>Год издания</label>
+                <input type="number" id="editYear">
+            </div>
+            <div class="form-group">
+                <label>Категория</label>
+                <select id="editCategory">
+                    <option value="">— Без категории —</option>
+                </select>
+            </div>
+            <div class="buttons">
+                <button class="save-btn" onclick="saveBook()">Сохранить</button>
+                <button class="cancel-btn" onclick="closeModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+    <div id="editSourceModal" class="modal-overlay">
+        <div class="modal">
+            <h2>Редактирование хранилища</h2>
+            <div class="form-group">
+                <label>Название</label>
+                <input type="text" id="sourceName">
+            </div>
+            <div class="form-group">
+                <label>Путь</label>
+                <input type="text" id="sourcePath">
+            </div>
+            <div class="form-group">
+                <label>Тип</label>
+                <select id="sourceType">
+                    <option value="local">Local</option>
+                    <option value="hdd">HDD</option>
+                    <option value="ssd">SSD</option>
+                    <option value="dvd">DVD</option>
+                    <option value="nas">NAS</option>
+                    <option value="network">Network</option>
+                    <option value="cloud">Cloud</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Статус</label>
+                <select id="sourceStatus">
+                    <option value="available">Доступно</option>
+                    <option value="unavailable">Недоступно</option>
+                    <option value="archived">Архив</option>
+                </select>
+            </div>
+            <div class="buttons">
+                <button class="save-btn" onclick="saveSource()">Сохранить</button>
+                <button class="cancel-btn" onclick="closeSourceModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
     <div class="container">
         <header>
             <div>
@@ -178,47 +259,45 @@
             <h2 class="section-title">Управление хранилищами</h2>
             
             <button class="settings-btn" onclick="openSettings()">⚙️ Настройки</button>
-            <div id="settingsModal" class="modal">
-                <div class="modal-content">
-                    <span class="modal-close" onclick="closeSettings()">&times;</span>
-                    <h3>Настройки</h3>
-                    <div id="settingsContent">
-                        <p><strong>Текущий путь к библиотеке:</strong></p>
-                        <p id="currentLibraryPath" style="background:#f8f9fa;padding:10px;border-radius:4px;">Загрузка...</p>
-                        <div style="margin-top:15px;">
-                            <button class="btn-primary" onclick="changeLibraryPath()">Изменить папку</button>
-                        </div>
-                        <div style="margin-top:20px;border-top:1px solid #ddd;padding-top:15px;">
-                            <p><strong>Инициализация библиотеки:</strong></p>
-                            <p style="color:#999;font-size:13px;margin-bottom:10px;">Полный сброс базы данных. Все данные о книгах и хранилищах будут удалены.</p>
-                            <button onclick="openInitLibraryModal()" style="background:#e74c3c;color:white;padding:8px 16px;border:none;border-radius:4px;cursor:pointer;">Инициализировать библиотеку</button>
-                        </div>
+            <div id="settingsModal" class="modal-overlay">
+                <div class="modal">
+                    <h2>Настройки</h2>
+                    <div class="form-group">
+                        <label>Текущий путь к библиотеке:</label>
+                        <p id="currentLibraryPath" style="background:#f8f9fa;padding:10px;border-radius:4px;margin-top:5px;">Загрузка...</p>
                     </div>
+                    <button onclick="changeLibraryPath()" style="margin-bottom:20px;">Изменить папку</button>
+                    <hr style="margin:20px 0;border:none;border-top:1px solid #ddd;">
+                    <div class="form-group">
+                        <label>Инициализация библиотеки:</label>
+                        <p style="color:#999;font-size:13px;margin-top:5px;">Полный сброс базы данных. Все данные о книгах и хранилищах будут удалены.</p>
+                    </div>
+                    <button onclick="openInitLibraryModal()" style="background:#e74c3c;color:white;">Инициализировать библиотеку</button>
                 </div>
             </div>
-            
-            <!-- Modal для инициализации библиотеки -->
-            <div id="initLibraryModal" class="modal">
-                <div class="modal-content" style="max-width:400px;border-left:4px solid #e74c3c;">
-                    <span class="modal-close" onclick="closeInitLibraryModal()">&times;</span>
-                    <h3 style="color:#e74c3c;">Внимание!</h3>
-                    <p>Вы собираетесь <strong>полностью инициализировать библиотеку</strong>.</p>
-                    <p style="color:#c0392b;font-weight:bold;margin:15px 0;background:#ffeaa7;padding:10px;border-radius:4px;">
-                        Все данные о книгах и хранилищах будут безвозвратно удалены!
-                    </p>
-                    <p>После инициализации потребуется:</p>
-                    <ul style="margin:10px 0 15px 20px;color:#666;">
-                        <li>Повторно добавить все хранилища</li>
-                        <li>Повторно просканировать все диски</li>
-                        <li>Потеряны все настройки каталога</li>
-                    </ul>
-                    <p style="font-size:12px;color:#999;margin-bottom:15px;">Это действие нельзя отменить.</p>
-                    <div style="display:flex;gap:10px;justify-content:flex-end;">
-                        <button onclick="closeInitLibraryModal()" style="padding:8px 16px;background:#95a5a6;color:white;border:none;border-radius:4px;cursor:pointer;">Отмена</button>
-                        <button onclick="confirmInitLibrary()" style="padding:8px 16px;background:#e74c3c;color:white;border:none;border-radius:4px;cursor:pointer;">Да, инициализировать</button>
-                    </div>
+        </div>
+        
+        <!-- Modal для инициализации библиотеки -->
+        <div id="initLibraryModal" class="modal-overlay">
+            <div class="modal">
+                <h2 style="color:#e74c3c;">Внимание!</h2>
+                <p>Вы собираетесь <strong>полностью инициализировать библиотеку</strong>.</p>
+                <p style="color:#c0392b;font-weight:bold;margin:15px 0;background:#ffeaa7;padding:10px;border-radius:4px;">
+                    Все данные о книгах и хранилищах будут безвозвратно удалены!
+                </p>
+                <p>После инициализации потребуется:</p>
+                <ul style="margin:10px 0 15px 20px;color:#666;">
+                    <li>Повторно добавить все хранилища</li>
+                    <li>Повторно просканировать все диски</li>
+                    <li>Потеряны все настройки каталога</li>
+                </ul>
+                <p style="font-size:12px;color:#999;margin-bottom:15px;">Это действие нельзя отменить.</p>
+                <div class="buttons">
+                    <button class="cancel-btn" onclick="closeInitLibraryModal()">Отмена</button>
+                    <button class="save-btn" style="background:#e74c3c;" onclick="confirmInitLibrary()">Да, инициализировать</button>
                 </div>
             </div>
+        </div>
             
             <div class="add-source-section">
                 <h3>Добавить хранилище</h3>
@@ -343,7 +422,10 @@
                 } else {
                     data.books.forEach(book => {
                         const card = document.createElement('div');
-                        card.className = 'book-card';
+                        card.className = 'book-card' + (book.is_available === false ? ' unavailable' : '');
+                        const btnDisabled = book.is_available === false ? 'disabled' : '';
+                        const btnText = book.is_available === false ? 'Файл недоступен' : 'Открыть файл';
+                        const btnClass = book.is_available === false ? 'open-btn disabled' : 'open-btn';
                         card.innerHTML = `
                             <h3>${escapeHtml(book.title || 'Без названия')}</h3>
                             <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
@@ -355,7 +437,8 @@
                                 ${book.source_name ? `<span class="category-tag" style="background:#ffeaa7">${escapeHtml(book.source_name)}</span>` : ''}
                             </div>
                             ${book.description ? `<div class="description">${escapeHtml(book.description)}</div>` : ''}
-                            <button class="open-btn" onclick="openBook('${escapeJs(book.file_path)}')">Открыть файл</button>
+                            <button class="edit-btn" onclick="editBook(${book.id})" title="Редактировать">&#9998;</button>
+                            <button class="${btnClass}" ${btnDisabled} onclick="${btnDisabled ? '' : `openBook(${book.id})`}">${btnText}</button>
                         `;
                         container.appendChild(card);
                     });
@@ -419,7 +502,10 @@
                 } else {
                     data.books.forEach(book => {
                         const card = document.createElement('div');
-                        card.className = 'book-card';
+                        card.className = 'book-card' + (book.is_available === false ? ' unavailable' : '');
+                        const btnDisabled = book.is_available === false ? 'disabled' : '';
+                        const btnText = book.is_available === false ? 'Файл недоступен' : 'Открыть файл';
+                        const btnClass = book.is_available === false ? 'open-btn disabled' : 'open-btn';
                         let title = book.title_hl || book.title || 'Без названия';
                         card.innerHTML = `
                             <h3>${title}</h3>
@@ -430,7 +516,9 @@
                                 ${book.category_name ? `<span class="category-tag">${escapeHtml(book.category_name)}</span>` : ''}
                             </div>
                             ${book.desc_snippet ? `<div class="description">${book.desc_snippet}</div>` : ''}
-                            <button class="open-btn" onclick="openBook('${escapeJs(book.file_path)}')">Открыть файл</button>
+                            ${book.source_name ? `<span class="category-tag" style="background:#ffeaa7">${escapeHtml(book.source_name)}</span>` : ''}
+                            <button class="edit-btn" onclick="editBook(${book.id})" title="Редактировать">&#9998;</button>
+                            <button class="${btnClass}" ${btnDisabled} onclick="${btnDisabled ? '' : `openBook(${book.id})`}">${btnText}</button>
                         `;
                         container.appendChild(card);
                     });
@@ -518,7 +606,10 @@
                 
                 data.books.forEach(book => {
                     const card = document.createElement('div');
-                    card.className = 'book-card';
+                    card.className = 'book-card' + (book.is_available === false ? ' unavailable' : '');
+                    const btnDisabled = book.is_available === false ? 'disabled' : '';
+                    const btnText = book.is_available === false ? 'Файл недоступен' : 'Открыть файл';
+                    const btnClass = book.is_available === false ? 'open-btn disabled' : 'open-btn';
                     let title = book.title_hl || book.title || 'Без названия';
                     card.innerHTML = `
                         <h3>${title}</h3>
@@ -527,7 +618,8 @@
                             <span class="format-badge">${book.format || '?'}</span>
                             ${book.year ? `<span>${book.year}</span>` : ''}
                         </div>
-                        <button class="open-btn" onclick="openBook('${escapeJs(book.file_path)}')">Открыть файл</button>
+                        <button class="edit-btn" onclick="editBook(${book.id})" title="Редактировать">&#9998;</button>
+                        <button class="${btnClass}" ${btnDisabled} onclick="${btnDisabled ? '' : `openBook(${book.id})`}">${btnText}</button>
                     `;
                     container.appendChild(card);
                 });
@@ -575,10 +667,11 @@
                                 ${source.catalog_id ? `<span>ID: ${escapeHtml(source.catalog_id)}</span>` : ''}
                                 ${source.volume_label ? `<span>Метка: ${escapeHtml(source.volume_label)}</span>` : ''}
                                 <span>Последнее сканирование: ${lastScanned}</span>
-                                ${source.is_active ? '<span style="color:#27ae60">● Активно</span>' : '<span style="color:#e74c3c">○ Отключено</span>'}
+                                <span class="status-badge status-${source.availability_status || 'available'}">${source.availability_status === 'available' ? 'Доступно' : source.availability_status === 'unavailable' ? 'Недоступно' : 'Архив'}</span>
                             </div>
                         </div>
                         <div class="actions">
+                            <button class="edit-btn" onclick="editSource(${source.id})" title="Редактировать">&#9998;</button>
                             <button class="scan-btn" onclick="scanSource(${source.id})">Сканировать</button>
                             <button class="delete-btn" onclick="deleteSource(${source.id})">Удалить</button>
                         </div>
@@ -674,9 +767,165 @@
             } catch (e) { console.error(e); }
         }
         
-        function openBook(path) {
-            path = path.replace(/\//g, '\\');
-            window.open('file:///' + path.replace(/\\/g, '/'));
+        let editingSourceId = null;
+        
+        async function editSource(sourceId) {
+            try {
+                console.log('editSource called, id:', sourceId);
+                const res = await fetch(`/api/sources/${sourceId}`);
+                if (!res.ok) {
+                    alert('Ошибка загрузки хранилища: ' + res.status);
+                    return;
+                }
+                const source = await res.json();
+                console.log('source loaded:', source);
+                
+                editingSourceId = sourceId;
+                document.getElementById('sourceName').value = source.name || '';
+                document.getElementById('sourcePath').value = source.path || '';
+                document.getElementById('sourceType').value = source.type || 'local';
+                document.getElementById('sourceStatus').value = source.availability_status || 'available';
+                
+                const modal = document.getElementById('editSourceModal');
+                modal.classList.add('active');
+                console.log('modal classes after add:', modal.className);
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка при загрузке данных хранилища: ' + e.message);
+            }
+        }
+        
+        function closeSourceModal() {
+            document.getElementById('editSourceModal').classList.remove('active');
+            editingSourceId = null;
+        }
+        
+        async function saveSource() {
+            if (!editingSourceId) return;
+            
+            const data = {
+                name: document.getElementById('sourceName').value,
+                path: document.getElementById('sourcePath').value,
+                type: document.getElementById('sourceType').value,
+                availability_status: document.getElementById('sourceStatus').value
+            };
+            
+            try {
+                const res = await fetch(`/api/sources/${editingSourceId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert(err.detail || 'Ошибка сохранения');
+                    return;
+                }
+                
+                closeSourceModal();
+                loadSources();
+                loadStats();
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка сохранения');
+            }
+        }
+        
+        async function openBook(bookId) {
+            try {
+                const res = await fetch(`/api/books/${bookId}/open`, {method: 'POST'});
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert(err.detail || 'Не удалось открыть файл');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка при открытии файла');
+            }
+        }
+        
+        let editingBookId = null;
+        
+        async function editBook(bookId) {
+            try {
+                console.log('editBook called with id:', bookId);
+                const res = await fetch(`/api/books/${bookId}`);
+                if (!res.ok) {
+                    alert('Ошибка загрузки книги: ' + res.status);
+                    return;
+                }
+                const book = await res.json();
+                
+                editingBookId = bookId;
+                document.getElementById('editTitle').value = book.title || '';
+                document.getElementById('editAuthor').value = book.author || '';
+                document.getElementById('editYear').value = book.year || '';
+                
+                await loadCategoriesForEdit(book.category_id);
+                
+                const modal = document.getElementById('editModal');
+                modal.classList.add('active');
+                console.log('Modal classes after add:', modal.className);
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка при загрузке данных книги: ' + e.message);
+            }
+        }
+        
+        async function loadCategoriesForEdit(selectedId) {
+            try {
+                const res = await fetch('/api/books/categories');
+                const categories = await res.json();
+                const select = document.getElementById('editCategory');
+                select.innerHTML = '<option value="">— Без категории —</option>';
+                categories.forEach(cat => {
+                    const opt = document.createElement('option');
+                    opt.value = cat.id;
+                    opt.textContent = cat.name;
+                    if (cat.id === selectedId) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        function closeModal() {
+            document.getElementById('editModal').classList.remove('active');
+            editingBookId = null;
+        }
+        
+        async function saveBook() {
+            if (!editingBookId) return;
+            
+            const data = {
+                title: document.getElementById('editTitle').value,
+                author: document.getElementById('editAuthor').value,
+                year: document.getElementById('editYear').value ? parseInt(document.getElementById('editYear').value) : null,
+                category_id: document.getElementById('editCategory').value ? parseInt(document.getElementById('editCategory').value) : null
+            };
+            
+            try {
+                const res = await fetch(`/api/books/${editingBookId}`, {
+                    method: 'PUT',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(data)
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    alert(err.detail || 'Ошибка сохранения');
+                    return;
+                }
+                
+                closeModal();
+                loadBooks();
+                loadStats();
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка сохранения');
+            }
         }
         
         function escapeHtml(text) {

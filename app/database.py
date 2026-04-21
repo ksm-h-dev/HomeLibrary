@@ -1,4 +1,5 @@
 import aiosqlite
+import os
 from config import DATABASE_URL
 
 DATABASE_PATH = DATABASE_URL
@@ -26,7 +27,8 @@ async def init_db():
                 is_active INTEGER DEFAULT 1,
                 description TEXT DEFAULT '',
                 last_scanned TIMESTAMP,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                availability_status TEXT DEFAULT 'available'
             );
 
             CREATE TABLE IF NOT EXISTS categories (
@@ -35,70 +37,14 @@ async def init_db():
                 parent_id INTEGER,
                 FOREIGN KEY (parent_id) REFERENCES categories(id)
             );
-
-            CREATE TABLE IF NOT EXISTS tags (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE
-            );
-
-            CREATE TABLE IF NOT EXISTS books (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                author TEXT DEFAULT '',
-                publisher TEXT DEFAULT '',
-                isbn TEXT DEFAULT '',
-                year INTEGER,
-                pages INTEGER,
-                format TEXT DEFAULT '',
-                file_size INTEGER DEFAULT 0,
-                description TEXT DEFAULT '',
-                file_path TEXT NOT NULL,
-                relative_path TEXT DEFAULT '',
-                cover_path TEXT DEFAULT '',
-                category_id INTEGER,
-                source_id INTEGER,
-                language TEXT DEFAULT 'ru',
-                source_url TEXT DEFAULT '',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (category_id) REFERENCES categories(id),
-                FOREIGN KEY (source_id) REFERENCES sources(id)
-            );
-
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_books_source_relpath ON books(source_id, relative_path);
-
-            CREATE TABLE IF NOT EXISTS book_tags (
-                book_id INTEGER NOT NULL,
-                tag_id INTEGER NOT NULL,
-                PRIMARY KEY (book_id, tag_id),
-                FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
-                FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
-            );
-
-            CREATE VIRTUAL TABLE IF NOT EXISTS books_fts USING fts5(
-                title,
-                author,
-                description,
-                content='books',
-                content_rowid='id'
-            );
-
-            CREATE TRIGGER IF NOT EXISTS books_ai AFTER INSERT ON books BEGIN
-                INSERT INTO books_fts(rowid, title, author, description)
-                VALUES (new.id, new.title, new.author, new.description);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS books_ad AFTER DELETE ON books BEGIN
-                INSERT INTO books_fts(books_fts, rowid, title, author, description)
-                VALUES ('delete', old.id, old.title, old.author, old.description);
-            END;
-
-            CREATE TRIGGER IF NOT EXISTS books_au AFTER UPDATE ON books BEGIN
-                INSERT INTO books_fts(books_fts, rowid, title, author, description)
-                VALUES ('delete', old.id, old.title, old.author, old.description);
-                INSERT INTO books_fts(rowid, title, author, description)
-                VALUES (new.id, new.title, new.author, new.description);
-            END;
         """)
+        try:
+            await db.execute(
+                "ALTER TABLE sources ADD COLUMN availability_status TEXT DEFAULT 'available'"
+            )
+            await db.commit()
+        except:
+            pass
         await db.commit()
 
 
@@ -122,9 +68,10 @@ async def get_all_books(
     sort_by: str = "date",
 ):
     query = """
-        SELECT b.*, c.name as category_name
+        SELECT b.*, c.name as category_name, s.name as source_name
         FROM books b
         LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN sources s ON b.source_id = s.id
     """
     params = []
     conditions = []
@@ -149,17 +96,23 @@ async def get_all_books(
     cursor = await db.execute(query, params)
     rows = await cursor.fetchall()
 
+    books = []
+    for row in rows:
+        book = dict(row)
+        book["is_available"] = os.path.exists(book.get("file_path", ""))
+        books.append(book)
+
     count_params = params.copy()
     count_params.pop()
     count_params.pop()
     cursor = await db.execute(
-        "SELECT COUNT(*) FROM books b LEFT JOIN categories c ON b.category_id = c.id"
+        "SELECT COUNT(*) FROM books b LEFT JOIN categories c ON b.category_id = c.id LEFT JOIN sources s ON b.source_id = s.id"
         + (" WHERE " + " AND ".join(conditions) if conditions else ""),
         count_params,
     )
     total = (await cursor.fetchone())[0]
 
-    return [dict(row) for row in rows], total
+    return books, total
 
 
 async def search_books(
@@ -174,12 +127,13 @@ async def search_books(
     sort_by: str = "date",
 ):
     sql = """
-        SELECT b.*, c.name as category_name,
+        SELECT b.*, c.name as category_name, s.name as source_name,
                b.title as title_hl,
                substr(b.description, 1, 150) as desc_snippet
         FROM books_fts
         JOIN books b ON books_fts.rowid = b.id
         LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN sources s ON b.source_id = s.id
         WHERE books_fts MATCH ?
     """
     sort_clause = SORT_OPTIONS.get(sort_by, "b.id DESC")
@@ -204,10 +158,17 @@ async def search_books(
     cursor = await db.execute(sql, params)
     rows = await cursor.fetchall()
 
+    books = []
+    for row in rows:
+        book = dict(row)
+        book["is_available"] = os.path.exists(book.get("file_path", ""))
+        books.append(book)
+
     count_sql = """
         SELECT COUNT(*) FROM books_fts
         JOIN books b ON books_fts.rowid = b.id
         LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN sources s ON b.source_id = s.id
         WHERE books_fts MATCH ?
     """
     count_params = [f"{query}*"]
@@ -227,21 +188,26 @@ async def search_books(
     cursor = await db.execute(count_sql, count_params)
     total = (await cursor.fetchone())[0]
 
-    return [dict(row) for row in rows], total
+    return books, total
 
 
 async def get_book_by_id(db: aiosqlite.Connection, book_id: int):
     cursor = await db.execute(
         """
-        SELECT b.*, c.name as category_name
+        SELECT b.*, c.name as category_name, s.name as source_name
         FROM books b
         LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN sources s ON b.source_id = s.id
         WHERE b.id = ?
     """,
         (book_id,),
     )
     row = await cursor.fetchone()
-    return dict(row) if row else None
+    if row:
+        book = dict(row)
+        book["is_available"] = os.path.exists(book.get("file_path", ""))
+        return book
+    return None
 
 
 async def get_categories(db: aiosqlite.Connection):
@@ -298,6 +264,35 @@ async def insert_book(db: aiosqlite.Connection, book_data: dict):
         return cursor.lastrowid
     except aiosqlite.IntegrityError:
         return None
+
+
+async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
+    await db.execute(
+        """
+        UPDATE books SET
+            title = COALESCE(?, title),
+            author = COALESCE(?, author),
+            publisher = COALESCE(?, publisher),
+            year = COALESCE(?, year),
+            pages = COALESCE(?, pages),
+            description = COALESCE(?, description),
+            category_id = COALESCE(?, category_id),
+            language = COALESCE(?, language)
+        WHERE id = ?
+        """,
+        (
+            book_data.get("title"),
+            book_data.get("author"),
+            book_data.get("publisher"),
+            book_data.get("year"),
+            book_data.get("pages"),
+            book_data.get("description"),
+            book_data.get("category_id"),
+            book_data.get("language"),
+            book_id,
+        ),
+    )
+    await db.commit()
 
 
 async def upsert_book(db: aiosqlite.Connection, book_data: dict):
@@ -443,10 +438,11 @@ async def get_source_by_id(db: aiosqlite.Connection, source_id: int):
 
 
 async def insert_source(db: aiosqlite.Connection, source_data: dict):
+    availability_status = check_source_availability(source_data)
     cursor = await db.execute(
         """
-        INSERT INTO sources (name, type, path, volume_label, catalog_id, is_active, description)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO sources (name, type, path, volume_label, catalog_id, is_active, description, availability_status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """,
         (
             source_data.get("name", ""),
@@ -456,6 +452,7 @@ async def insert_source(db: aiosqlite.Connection, source_data: dict):
             source_data.get("catalog_id", ""),
             source_data.get("is_active", 1),
             source_data.get("description", ""),
+            availability_status,
         ),
     )
     await db.commit()
@@ -463,25 +460,81 @@ async def insert_source(db: aiosqlite.Connection, source_data: dict):
 
 
 async def update_source(db: aiosqlite.Connection, source_id: int, source_data: dict):
-    await db.execute(
-        """
-        UPDATE sources 
-        SET name = ?, type = ?, path = ?, volume_label = ?, catalog_id = ?,
-            is_active = ?, description = ?, last_scanned = CURRENT_TIMESTAMP
-        WHERE id = ?
-    """,
-        (
-            source_data.get("name", ""),
-            source_data.get("type", "local"),
-            source_data.get("path", ""),
-            source_data.get("volume_label", ""),
-            source_data.get("catalog_id", ""),
-            source_data.get("is_active", 1),
-            source_data.get("description", ""),
-            source_id,
-        ),
-    )
+    new_path = source_data.get("path", "")
+
+    cursor = await db.execute("SELECT path FROM sources WHERE id = ?", (source_id,))
+    row = await cursor.fetchone()
+    old_path = row[0] if row else ""
+
+    if old_path and new_path and old_path != new_path:
+        await db.execute(
+            "UPDATE books SET file_path = REPLACE(file_path, ?, ?) WHERE source_id = ?",
+            (old_path, new_path, source_id),
+        )
+
+    status = source_data.get("availability_status")
+    if status:
+        await db.execute(
+            """
+            UPDATE sources 
+            SET name = COALESCE(?, name), type = COALESCE(?, type), path = COALESCE(?, path),
+                volume_label = COALESCE(?, volume_label), catalog_id = COALESCE(?, catalog_id),
+                is_active = COALESCE(?, is_active), description = COALESCE(?, description),
+                availability_status = ?,
+                last_scanned = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                source_data.get("name"),
+                source_data.get("type"),
+                source_data.get("path"),
+                source_data.get("volume_label"),
+                source_data.get("catalog_id"),
+                source_data.get("is_active"),
+                source_data.get("description"),
+                status,
+                source_id,
+            ),
+        )
+    else:
+        await db.execute(
+            """
+            UPDATE sources 
+            SET name = COALESCE(?, name), type = COALESCE(?, type), path = COALESCE(?, path),
+                volume_label = COALESCE(?, volume_label), catalog_id = COALESCE(?, catalog_id),
+                is_active = COALESCE(?, is_active), description = COALESCE(?, description),
+                last_scanned = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                source_data.get("name"),
+                source_data.get("type"),
+                source_data.get("path"),
+                source_data.get("volume_label"),
+                source_data.get("catalog_id"),
+                source_data.get("is_active"),
+                source_data.get("description"),
+                source_id,
+            ),
+        )
     await db.commit()
+
+
+def check_source_availability(source_data: dict) -> str:
+    path = source_data.get("path", "")
+    catalog_id = source_data.get("catalog_id", "")
+
+    if path and os.path.exists(path):
+        return "available"
+
+    if catalog_id and os.path.exists(catalog_id):
+        return "available"
+
+    source_type = source_data.get("type", "")
+    if source_type in ("dvd", "ssd"):
+        return "archived"
+
+    return "unavailable"
 
 
 async def update_source_path(
