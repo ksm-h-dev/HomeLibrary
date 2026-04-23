@@ -27,10 +27,11 @@ async def list_books(
     year: Optional[int] = None,
     source_id: Optional[int] = None,
     sort_by: Optional[str] = Query("date", regex="^(date|title|author|year|pages)$"),
+    availability: Optional[str] = Query(None, regex="^(available|missing|new)$"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     books, total = await get_all_books(
-        db, limit, offset, category, format, year, source_id, sort_by
+        db, limit, offset, category, format, year, source_id, sort_by, availability
     )
     return {"total": total, "books": books}
 

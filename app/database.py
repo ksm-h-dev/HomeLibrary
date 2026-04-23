@@ -37,11 +37,51 @@ async def init_db():
                 parent_id INTEGER,
                 FOREIGN KEY (parent_id) REFERENCES categories(id)
             );
+
+            CREATE TABLE IF NOT EXISTS books (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                author TEXT DEFAULT '',
+                publisher TEXT DEFAULT '',
+                isbn TEXT DEFAULT '',
+                year INTEGER,
+                pages INTEGER,
+                format TEXT DEFAULT '',
+                file_size INTEGER DEFAULT 0,
+                description TEXT DEFAULT '',
+                file_path TEXT NOT NULL,
+                relative_path TEXT DEFAULT '',
+                cover_path TEXT DEFAULT '',
+                category_id INTEGER,
+                source_id INTEGER,
+                language TEXT DEFAULT 'ru',
+                source_url TEXT DEFAULT '',
+                is_available INTEGER DEFAULT 1,
+                last_seen TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (category_id) REFERENCES categories(id),
+                FOREIGN KEY (source_id) REFERENCES sources(id)
+            );
         """)
         try:
             await db.execute(
                 "ALTER TABLE sources ADD COLUMN availability_status TEXT DEFAULT 'available'"
             )
+            await db.commit()
+        except:
+            pass
+        try:
+            await db.execute("ALTER TABLE books ADD COLUMN is_available INTEGER DEFAULT 1")
+            await db.commit()
+        except:
+            pass
+        try:
+            await db.execute("ALTER TABLE books ADD COLUMN last_seen TIMESTAMP")
+            await db.commit()
+        except:
+            pass
+        try:
+            await db.execute("ALTER TABLE books ADD COLUMN is_new_arrival INTEGER DEFAULT 0")
             await db.commit()
         except:
             pass
@@ -66,6 +106,7 @@ async def get_all_books(
     year: int = None,
     source_id: int = None,
     sort_by: str = "date",
+    availability: str = None,
 ):
     query = """
         SELECT b.*, c.name as category_name, s.name as source_name
@@ -87,9 +128,17 @@ async def get_all_books(
     if source_id:
         conditions.append("b.source_id = ?")
         params.append(source_id)
+    if availability == "available":
+        conditions.append("b.is_available = 1")
+    elif availability == "missing":
+        conditions.append("b.is_available = 0")
+    elif availability == "new":
+        conditions.append("b.is_new_arrival = 1")
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     sort_clause = SORT_OPTIONS.get(sort_by, "b.id DESC")
+    if availability == "new":
+        sort_clause = "b.last_seen DESC"
     query += f" ORDER BY {sort_clause} LIMIT ? OFFSET ?"
     params.extend([limit, offset])
 
@@ -99,7 +148,11 @@ async def get_all_books(
     books = []
     for row in rows:
         book = dict(row)
-        book["is_available"] = os.path.exists(book.get("file_path", ""))
+        stored = book.get("is_available")
+        if stored is None or stored == '':
+            book["is_available"] = os.path.exists(book.get("file_path", ""))
+        else:
+            book["is_available"] = bool(stored)
         books.append(book)
 
     count_params = params.copy()
@@ -125,6 +178,7 @@ async def search_books(
     limit: int = 20,
     offset: int = 0,
     sort_by: str = "date",
+    availability: str = None,
 ):
     sql = """
         SELECT b.*, c.name as category_name, s.name as source_name,
@@ -151,6 +205,13 @@ async def search_books(
     if source_id:
         sql += " AND b.source_id = ?"
         params.append(source_id)
+    if availability == "available":
+        sql += " AND b.is_available = 1"
+    elif availability == "missing":
+        sql += " AND b.is_available = 0"
+    elif availability == "new":
+        sql += " AND b.is_new_arrival = 1"
+        sort_clause = "b.last_seen DESC"
 
     sql += f" ORDER BY {sort_clause} LIMIT ? OFFSET ?"
     params.extend([limit, offset])
@@ -161,7 +222,11 @@ async def search_books(
     books = []
     for row in rows:
         book = dict(row)
-        book["is_available"] = os.path.exists(book.get("file_path", ""))
+        stored = book.get("is_available")
+        if stored is None or stored == '':
+            book["is_available"] = os.path.exists(book.get("file_path", ""))
+        else:
+            book["is_available"] = bool(stored)
         books.append(book)
 
     count_sql = """
@@ -184,6 +249,12 @@ async def search_books(
     if source_id:
         count_sql += " AND b.source_id = ?"
         count_params.append(source_id)
+    if availability == "available":
+        count_sql += " AND b.is_available = 1"
+    elif availability == "missing":
+        count_sql += " AND b.is_available = 0"
+    elif availability == "new":
+        count_sql += " AND b.is_new_arrival = 1"
 
     cursor = await db.execute(count_sql, count_params)
     total = (await cursor.fetchone())[0]
@@ -205,7 +276,11 @@ async def get_book_by_id(db: aiosqlite.Connection, book_id: int):
     row = await cursor.fetchone()
     if row:
         book = dict(row)
-        book["is_available"] = os.path.exists(book.get("file_path", ""))
+        stored = book.get("is_available")
+        if stored is None or stored == '':
+            book["is_available"] = os.path.exists(book.get("file_path", ""))
+        else:
+            book["is_available"] = bool(stored)
         return book
     return None
 
@@ -272,6 +347,7 @@ async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
         UPDATE books SET
             title = COALESCE(?, title),
             author = COALESCE(?, author),
+            isbn = COALESCE(?, isbn),
             publisher = COALESCE(?, publisher),
             year = COALESCE(?, year),
             pages = COALESCE(?, pages),
@@ -283,6 +359,7 @@ async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
         (
             book_data.get("title"),
             book_data.get("author"),
+            book_data.get("isbn"),
             book_data.get("publisher"),
             book_data.get("year"),
             book_data.get("pages"),
@@ -624,4 +701,159 @@ async def get_books_by_source(
     )
     total = (await cursor.fetchone())[0]
 
-    return [dict(row) for row in rows], total
+    books = []
+    for row in rows:
+        book = dict(row)
+        stored = book.get("is_available")
+        if stored is None or stored == '':
+            book["is_available"] = os.path.exists(book.get("file_path", ""))
+        else:
+            book["is_available"] = bool(stored)
+        books.append(book)
+
+    return books, total
+
+
+async def get_books_by_source_all(db: aiosqlite.Connection, source_id: int):
+    cursor = await db.execute(
+        """
+        SELECT b.*, c.name as category_name, s.name as source_name
+        FROM books b
+        LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN sources s ON b.source_id = s.id
+        WHERE b.source_id = ?
+        ORDER BY b.id DESC
+    """,
+        (source_id,),
+    )
+    rows = await cursor.fetchall()
+    books = []
+    for row in rows:
+        book = dict(row)
+        stored = book.get("is_available")
+        if stored is None or stored == '':
+            book["is_available"] = os.path.exists(book.get("file_path", ""))
+        else:
+            book["is_available"] = bool(stored)
+        books.append(book)
+    return books
+
+
+async def confirm_book_presence(db: aiosqlite.Connection, book_id: int):
+    await db.execute(
+        "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+        (book_id,),
+    )
+    await db.commit()
+
+
+async def mark_books_missing(db: aiosqlite.Connection, source_id: int, exclude_paths: list):
+    if not exclude_paths:
+        await db.execute(
+            "UPDATE books SET is_available = 0 WHERE source_id = ?",
+            (source_id,),
+        )
+    else:
+        placeholders = ",".join("?" * len(exclude_paths))
+        await db.execute(
+            f"UPDATE books SET is_available = 0 WHERE source_id = ? AND relative_path NOT IN ({placeholders})",
+            (source_id, *exclude_paths),
+        )
+    await db.commit()
+
+
+async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
+    source_id = book_data.get("source_id")
+    relative_path = book_data.get("relative_path", "")
+
+    cursor = await db.execute(
+        "SELECT id FROM books WHERE source_id = ? AND relative_path = ?",
+        (source_id, relative_path),
+    )
+    existing = await cursor.fetchone()
+
+    if existing:
+        book_id = existing[0]
+        await db.execute(
+            """
+            UPDATE books SET
+                title = COALESCE(?, title),
+                author = COALESCE(?, author),
+                publisher = COALESCE(?, publisher),
+                isbn = COALESCE(?, isbn),
+                year = COALESCE(?, year),
+                pages = COALESCE(?, pages),
+                format = COALESCE(?, format),
+                file_size = COALESCE(?, file_size),
+                file_path = COALESCE(?, file_path),
+                cover_path = COALESCE(?, cover_path),
+                category_id = COALESCE(?, category_id),
+                language = COALESCE(?, language),
+                source_url = COALESCE(?, source_url),
+                is_available = 1,
+                last_seen = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (
+                book_data.get("title"),
+                book_data.get("author"),
+                book_data.get("publisher"),
+                book_data.get("isbn"),
+                book_data.get("year"),
+                book_data.get("pages"),
+                book_data.get("format"),
+                book_data.get("file_size"),
+                book_data.get("file_path"),
+                book_data.get("cover_path"),
+                book_data.get("category_id"),
+                book_data.get("language"),
+                book_data.get("source_url"),
+                book_id,
+            ),
+        )
+        await db.commit()
+        return book_id, False
+    else:
+        cursor = await db.execute(
+            """
+            INSERT INTO books (
+                title, author, publisher, isbn, year, pages,
+                format, file_size, description, file_path, relative_path,
+                cover_path, category_id, source_id, language, source_url,
+                is_available, is_new_arrival, last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP)
+            """,
+            (
+                book_data.get("title", ""),
+                book_data.get("author", ""),
+                book_data.get("publisher", ""),
+                book_data.get("isbn", ""),
+                book_data.get("year"),
+                book_data.get("pages"),
+                book_data.get("format", ""),
+                book_data.get("file_size", 0),
+                book_data.get("description", ""),
+                book_data.get("file_path", ""),
+                book_data.get("relative_path", ""),
+                book_data.get("cover_path", ""),
+                book_data.get("category_id"),
+                book_data.get("source_id"),
+                book_data.get("language", "ru"),
+                book_data.get("source_url", ""),
+            ),
+        )
+        await db.commit()
+        return cursor.lastrowid, True
+
+
+async def reset_stale_new_arrivals(db: aiosqlite.Connection, source_id: int):
+    await db.execute(
+        """
+        UPDATE books SET is_new_arrival = 0
+        WHERE source_id = ?
+          AND is_new_arrival = 1
+          AND last_seen < datetime('now', '-7 days')
+        """,
+        (source_id,),
+    )
+    await db.commit()

@@ -18,10 +18,11 @@ async def search(
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
     sort_by: Optional[str] = Query("date", regex="^(date|title|author|pages)$"),
+    availability: Optional[str] = Query(None, regex="^(available|missing|new)$"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     books, total = await search_books(
-        db, q, format, category, year, source_id, limit, offset, sort_by
+        db, q, format, category, year, source_id, limit, offset, sort_by, availability
     )
     return {"total": total, "query": q, "books": books}
 

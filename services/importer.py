@@ -207,10 +207,14 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     from app.database import (
         init_db,
         get_or_create_category,
-        upsert_book,
+        upsert_book_preserve,
+        confirm_book_presence,
+        mark_books_missing,
+        get_books_by_source_all,
         get_source_by_id,
         update_source_path,
         upsert_source_by_identifier,
+        reset_stale_new_arrivals,
         DATABASE_PATH,
     )
     from services.drives import get_source_identifier, get_volume_label
@@ -254,11 +258,14 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
 
     await init_db()
 
+    await reset_stale_new_arrivals(db, source_id)
+
     books = await scan_directory(directory, source_id)
     scanned = len(books)
     imported = 0
-    updated = 0
-    skipped = 0
+    confirmed = 0
+
+    found_paths = []
 
     for book in books:
         category_id = None
@@ -268,33 +275,58 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         book["category_id"] = category_id
         book["source_id"] = source_id
 
+        found_paths.append(book["relative_path"])
+
         cursor = await db.execute(
             "SELECT id FROM books WHERE source_id = ? AND relative_path = ?",
             (source_id, book["relative_path"]),
         )
         existing = await cursor.fetchone()
 
-        book_id = await upsert_book(db, book)
-
         if existing:
-            updated += 1
-            print(f"  ~ Updated: {book.get('title', 'Unknown')}")
-        elif book_id:
-            imported += 1
-            print(f"  + New: {book.get('title', 'Unknown')}")
+            book_id = existing[0]
+            await confirm_book_presence(db, book_id)
+            confirmed += 1
+            print(f"  + Confirmed: {book.get('title', 'Unknown')}")
         else:
-            skipped += 1
-            print(f"  - Skipped: {book.get('title', 'Unknown')}")
+            book_id, is_new = await upsert_book_preserve(db, book)
+            if is_new:
+                imported += 1
+                print(f"  + New: {book.get('title', 'Unknown')}")
+            else:
+                confirmed += 1
+
+    all_source_books = await get_books_by_source_all(db, source_id)
+    all_db_paths = set(book["relative_path"] for book in all_source_books)
+
+    paths_to_exclude = set(found_paths)
+    missing_paths = all_db_paths - paths_to_exclude
+
+    if missing_paths:
+        placeholders = ",".join("?" * len(missing_paths))
+        await db.execute(
+            f"UPDATE books SET is_available = 0 WHERE source_id = ? AND relative_path IN ({placeholders})",
+            (source_id, *missing_paths),
+        )
+        await db.commit()
+
+    missing_books = [
+        {"id": book["id"], "title": book["title"], "relative_path": book["relative_path"]}
+        for book in all_source_books
+        if book["relative_path"] in missing_paths
+    ]
+    missing = len(missing_books)
 
     await db.close()
-    print(f"\nImport complete: {imported} new, {updated} updated, {skipped} skipped")
+    print(f"\nImport complete: {imported} new, {confirmed} confirmed, {missing} missing")
 
     return {
         "source_id": source_id,
         "scanned": scanned,
         "imported": imported,
-        "updated": updated,
-        "skipped": skipped,
+        "confirmed": confirmed,
+        "missing": missing,
+        "missing_books": missing_books,
     }
 
 

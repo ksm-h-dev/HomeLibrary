@@ -29,6 +29,7 @@ class BookCreate(BookBase):
 class BookUpdate(BaseModel):
     title: Optional[str] = None
     author: Optional[str] = None
+    isbn: Optional[str] = None
     publisher: Optional[str] = None
     year: Optional[int] = None
     pages: Optional[int] = None
@@ -42,6 +43,8 @@ class BookResponse(BookBase):
     category_name: Optional[str] = None
     source_name: Optional[str] = None
     is_available: bool = True
+    is_new_arrival: bool = False
+    last_seen: Optional[datetime] = None
 
     class Config:
         from_attributes = True

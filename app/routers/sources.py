@@ -145,6 +145,7 @@ async def scan_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)
         "source_id": result.get("source_id"),
         "scanned": result.get("scanned", 0),
         "imported": result.get("imported", 0),
-        "updated": result.get("updated", 0),
-        "skipped": result.get("skipped", 0),
+        "confirmed": result.get("confirmed", 0),
+        "missing": result.get("missing", 0),
+        "missing_books": result.get("missing_books", []),
     }

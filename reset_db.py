@@ -49,6 +49,9 @@ CREATE TABLE IF NOT EXISTS books (
     source_id INTEGER,
     language TEXT DEFAULT 'ru',
     source_url TEXT DEFAULT '',
+    is_available INTEGER DEFAULT 1,
+    is_new_arrival INTEGER DEFAULT 0,
+    last_seen TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

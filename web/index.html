@@ -39,9 +39,13 @@
         .books-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
         
         .book-card { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); transition: transform 0.2s; }
+        .book-card.available { background: #d4edda; border-left: 4px solid #28a745; }
+        .book-card.missing { background: #f8d7da; border-left: 4px solid #dc3545; }
+        .book-card.needs-review { background: #e2e3e5; border-left: 4px solid #6c757d; }
         .book-card:hover { transform: translateY(-4px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .book-card h3 { font-size: 16px; margin-bottom: 8px; color: #2c3e50; }
         .book-card .author { color: #666; font-size: 14px; margin-bottom: 10px; }
+        .book-card .isbn { color: #999; font-size: 12px; margin-top: 4px; font-style: italic; }
         .book-card .meta { font-size: 12px; color: #999; display: flex; gap: 10px; flex-wrap: wrap; }
         .book-card .description { font-size: 13px; color: #555; margin-top: 10px; line-height: 1.4; max-height: 60px; overflow: hidden; }
         .book-card .format-badge { display: inline-block; padding: 2px 8px; background: #ecf0f1; border-radius: 4px; font-size: 11px; text-transform: uppercase; }
@@ -123,6 +127,15 @@
         .tab-content.active { display: block; }
         
         .section-title { font-size: 18px; margin-bottom: 15px; color: #2c3e50; }
+
+        .settings-section { margin-bottom: 20px; }
+        .settings-section label { display: block; margin-bottom: 5px; font-size: 14px; color: #2c3e50; font-weight: 500; }
+        .settings-path-display { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-top: 5px; font-size: 13px; color: #666; }
+        .settings-btn-action { padding: 10px 20px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .settings-btn-action:hover { background: #2980b9; }
+        .settings-btn-danger { padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+        .settings-btn-danger:hover { background: #c0392b; }
+        .settings-divider { margin: 20px 0; border: none; border-top: 1px solid #ddd; }
     </style>
 </head>
 <body>
@@ -136,6 +149,10 @@
             <div class="form-group">
                 <label>Автор</label>
                 <input type="text" id="editAuthor">
+            </div>
+            <div class="form-group">
+                <label>ISBN</label>
+                <input type="text" id="editIsbn">
             </div>
             <div class="form-group">
                 <label>Год издания</label>
@@ -246,6 +263,12 @@
                     <option value="year">Год</option>
                     <option value="pages">Страниц</option>
                 </select>
+                <select id="availabilityFilter">
+                    <option value="">Все книги</option>
+                    <option value="available">В наличии</option>
+                    <option value="missing">Отсутствуют</option>
+                    <option value="new">Новые поступления</option>
+                </select>
             </div>
             
             <div id="booksContainer" class="books-grid"></div>
@@ -262,17 +285,20 @@
             <div id="settingsModal" class="modal-overlay">
                 <div class="modal">
                     <h2>Настройки</h2>
-                    <div class="form-group">
+                    <div class="settings-section">
                         <label>Текущий путь к библиотеке:</label>
-                        <p id="currentLibraryPath" style="background:#f8f9fa;padding:10px;border-radius:4px;margin-top:5px;">Загрузка...</p>
+                        <p id="currentLibraryPath" class="settings-path-display">Загрузка...</p>
                     </div>
-                    <button onclick="changeLibraryPath()" style="margin-bottom:20px;">Изменить папку</button>
-                    <hr style="margin:20px 0;border:none;border-top:1px solid #ddd;">
-                    <div class="form-group">
+                    <button class="settings-btn-action" onclick="changeLibraryPath()">Изменить папку</button>
+                    <hr class="settings-divider">
+                    <div class="settings-section">
                         <label>Инициализация библиотеки:</label>
                         <p style="color:#999;font-size:13px;margin-top:5px;">Полный сброс базы данных. Все данные о книгах и хранилищах будут удалены.</p>
                     </div>
-                    <button onclick="openInitLibraryModal()" style="background:#e74c3c;color:white;">Инициализировать библиотеку</button>
+                    <button class="settings-btn-danger" onclick="openInitLibraryModal()">Инициализировать библиотеку</button>
+                    <div class="buttons" style="margin-top:20px;">
+                        <button class="cancel-btn" onclick="closeSettings()">Закрыть</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -395,11 +421,13 @@
                 const year = document.getElementById('yearFilter').value;
                 const sourceId = document.getElementById('sourceFilter').value;
                 const sortBy = document.getElementById('sortFilter').value;
+                const availability = document.getElementById('availabilityFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
                 if (year) url += `&year=${year}`;
                 if (sourceId) url += `&source_id=${sourceId}`;
                 if (sortBy && sortBy !== 'date') url += `&sort_by=${sortBy}`;
+                if (availability) url += `&availability=${availability}`;
                 
                 console.log('Fetching:', url);
                 
@@ -422,13 +450,20 @@
                 } else {
                     data.books.forEach(book => {
                         const card = document.createElement('div');
-                        card.className = 'book-card' + (book.is_available === false ? ' unavailable' : '');
-                        const btnDisabled = book.is_available === false ? 'disabled' : '';
-                        const btnText = book.is_available === false ? 'Файл недоступен' : 'Открыть файл';
-                        const btnClass = book.is_available === false ? 'open-btn disabled' : 'open-btn';
+                        let cardClass = 'book-card';
+                        if (book.is_available === false || book.is_available === 0) {
+                            cardClass += ' missing';
+                        } else {
+                            cardClass += ' available';
+                        }
+                        card.className = cardClass;
+                        const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
+                        const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
+                        const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                         card.innerHTML = `
                             <h3>${escapeHtml(book.title || 'Без названия')}</h3>
                             <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
+                            ${book.isbn ? `<div class="isbn">ISBN: ${escapeHtml(book.isbn)}</div>` : ''}
                             <div class="meta">
                                 <span class="format-badge">${book.format || '?'}</span>
                                 ${book.year ? `<span>${book.year}</span>` : ''}
@@ -476,11 +511,13 @@
                 const year = document.getElementById('yearFilter').value;
                 const sourceId = document.getElementById('sourceFilter').value;
                 const sortBy = document.getElementById('sortFilter').value;
+                const availability = document.getElementById('availabilityFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
                 if (year) url += `&year=${year}`;
                 if (sourceId) url += `&source_id=${sourceId}`;
                 if (sortBy && sortBy !== 'date') url += `&sort_by=${sortBy}`;
+                if (availability) url += `&availability=${availability}`;
                 
                 console.log('Search URL:', url);
                 
@@ -502,14 +539,21 @@
                 } else {
                     data.books.forEach(book => {
                         const card = document.createElement('div');
-                        card.className = 'book-card' + (book.is_available === false ? ' unavailable' : '');
-                        const btnDisabled = book.is_available === false ? 'disabled' : '';
-                        const btnText = book.is_available === false ? 'Файл недоступен' : 'Открыть файл';
-                        const btnClass = book.is_available === false ? 'open-btn disabled' : 'open-btn';
+                        let cardClass = 'book-card';
+                        if (book.is_available === false || book.is_available === 0) {
+                            cardClass += ' missing';
+                        } else {
+                            cardClass += ' available';
+                        }
+                        card.className = cardClass;
+                        const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
+                        const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
+                        const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                         let title = book.title_hl || book.title || 'Без названия';
                         card.innerHTML = `
                             <h3>${title}</h3>
                             <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
+                            ${book.isbn ? `<div class="isbn">ISBN: ${escapeHtml(book.isbn)}</div>` : ''}
                             <div class="meta">
                                 <span class="format-badge">${book.format || '?'}</span>
                                 ${book.year ? `<span>${book.year}</span>` : ''}
@@ -594,9 +638,11 @@
                 let url = `/api/search?q=${encodeURIComponent(currentQuery)}&limit=${limit}&offset=${offset}`;
                 const format = document.getElementById('formatFilter').value;
                 const sourceId = document.getElementById('sourceFilter').value;
+                const availability = document.getElementById('availabilityFilter').value;
                 if (format) url += `&format=${format}`;
                 if (sourceId) url += `&source_id=${sourceId}`;
                 if (currentSort) url += `&sort_by=${currentSort}`;
+                if (availability) url += `&availability=${availability}`;
                 
                 const res = await fetch(url);
                 const data = await res.json();
@@ -606,10 +652,16 @@
                 
                 data.books.forEach(book => {
                     const card = document.createElement('div');
-                    card.className = 'book-card' + (book.is_available === false ? ' unavailable' : '');
-                    const btnDisabled = book.is_available === false ? 'disabled' : '';
-                    const btnText = book.is_available === false ? 'Файл недоступен' : 'Открыть файл';
-                    const btnClass = book.is_available === false ? 'open-btn disabled' : 'open-btn';
+                    let cardClass = 'book-card';
+                    if (book.is_available === false || book.is_available === 0) {
+                        cardClass += ' missing';
+                    } else {
+                        cardClass += ' available';
+                    }
+                    card.className = cardClass;
+                    const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
+                    const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
+                    const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                     let title = book.title_hl || book.title || 'Без названия';
                     card.innerHTML = `
                         <h3>${title}</h3>
@@ -860,6 +912,7 @@
                 editingBookId = bookId;
                 document.getElementById('editTitle').value = book.title || '';
                 document.getElementById('editAuthor').value = book.author || '';
+                document.getElementById('editIsbn').value = book.isbn || '';
                 document.getElementById('editYear').value = book.year || '';
                 
                 await loadCategoriesForEdit(book.category_id);
@@ -902,6 +955,7 @@
             const data = {
                 title: document.getElementById('editTitle').value,
                 author: document.getElementById('editAuthor').value,
+                isbn: document.getElementById('editIsbn').value || null,
                 year: document.getElementById('editYear').value ? parseInt(document.getElementById('editYear').value) : null,
                 category_id: document.getElementById('editCategory').value ? parseInt(document.getElementById('editCategory').value) : null
             };
