@@ -92,6 +92,9 @@
 | source_id | INTEGER | Внешний ключ на sources |
 | language | TEXT | Язык (ru, en) |
 | source_url | TEXT | URL источника |
+| is_available | INTEGER | Флаг наличия (1-в наличии, 0-отсутствует) |
+| is_new_arrival | INTEGER | Флаг нового поступления (сбрасывается через 7 дней) |
+| last_seen | TIMESTAMP | Время последнего подтверждения наличия |
 | created_at | TIMESTAMP | Дата добавления в БД |
 
 **Уникальный индекс:** `source_id + relative_path` (не допускает дубликатов)
@@ -144,29 +147,31 @@
 
 **Основные модули:**
 
-- `app/main.py` - точка входа, конфигурация приложения
-- `app/routers/books.py` - эндпоинты для работы с книгами
-- `app/routers/search.py` - эндпоинты для поиска
+- `app/main.py` - точка входа, конфигурация приложения, startup events
+- `app/database.py` - SQLite + FTS5, логика доступности, новые поступления
 - `app/models.py` - Pydantic модели для валидации
-- `app/database.py` - подключение к SQLite
+- `app/routers/books.py` - эндпоинты для работы с книгами (фильтр availability)
+- `app/routers/search.py` - эндпоинты для поиска (фильтр availability)
+- `app/routers/sources.py` - эндпоинты для хранилищ (CRUD, сканирование)
+- `app/routers/welcome.py` - настройка, about page API
 
 ### 3. Импортер (services/importer.py)
 
 **Функции:**
 
-- `scan_directory(path)` - рекурсивное сканирование каталога
+- `scan_directory(path, source_id)` - рекурсивное сканирование каталога
 - `parse_metadata_file(filepath)` - парсинг .txt файла
 - `extract_book_info(filename)` - извлечение информации из имени файла
-- `import_to_database(books)` - запись в БД
+- `import_from_source(source_id, directory)` - импорт с логикой наличия
 
-**Алгоритм импорта:**
+**Алгоритм сканирования:**
 
-1. Сканировать `C:\Book\` рекурсивно
-2. Для каждого файла с расширением `.rar`, `.pdf`, `.djvu`, `.zip`:
-   - Найти соответствующий `.txt` файл
-   - Распознать категорию по родительскому каталогу
-   - Извлечь обложку (`.jpg` с тем же именем)
-   - Сохранить метаданные в БД
+1. Сброс устаревших флагов `is_new_arrival` (старше 7 дней)
+2. Сканировать каталог рекурсивно
+3. Для каждого файла:
+   - **Существует в БД** → подтверждение наличия (обновление `is_available=1`, `last_seen`, без перезаписи данных)
+   - **Новый файл** → добавление с флагом `is_new_arrival=1`
+4. Книги, не найденные при сканировании → пометка `is_available=0`
 
 ### 4. Поиск (services/search.py)
 
@@ -181,7 +186,12 @@
 - SPA на чистом JavaScript
 - Fetch API для обращения к бэкенду
 - Отображение результатов поиска
-- Фильтры и пагинация
+- Фильтры (формат, категория, год, хранилище, **наличие**)
+- Сортировка (дата, название, автор, год, страницы)
+- Цветовая индикация карточек: **зелёный** (в наличии), **красный** (отсутствует)
+- Пагинация
+- Вкладки: Каталог / Хранилища
+- Модальные окна: настройки, редактирование книги, добавление хранилища
 
 ## Поток данных
 
@@ -207,6 +217,11 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
 - `limit` (int, optional): Количество записей (default: 20)
 - `offset` (int, optional): Смещение (default: 0)
 - `category` (string, optional): Фильтр по категории
+- `format` (string, optional): Формат файла
+- `year` (int, optional): Год издания
+- `source_id` (int, optional): ID хранилища
+- `sort_by` (string, optional): Сортировка (date, title, author, year, pages)
+- `availability` (string, optional): Фильтр по наличию: `available`, `missing`, `new`
 
 **Response:**
 ```json
@@ -218,7 +233,10 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
       "title": "Название книги",
       "author": "Автор",
       "format": "pdf",
-      "year": 2020
+      "year": 2020,
+      "is_available": true,
+      "is_new_arrival": false,
+      "last_seen": "2026-04-20T10:30:00"
     }
   ]
 }
@@ -253,15 +271,26 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
 - `format` (string, optional): Формат файла
 - `category` (string, optional): Категория
 - `year` (int, optional): Год издания
+- `source_id` (int, optional): ID хранилища
+- `sort_by` (string, optional): Сортировка (date, title, author, pages)
 - `limit` (int, optional): Лимит результатов
 - `offset` (int, optional): Смещение
+- `availability` (string, optional): Фильтр по наличию: `available`, `missing`, `new`
 
 **Response:**
 ```json
 {
   "total": 10,
   "query": "python",
-  "books": [...]
+  "books": [
+    {
+      "id": 1,
+      "title_hl": "Python <b>Programming</b>",
+      "desc_snippet": "Описание книги...",
+      "is_available": true,
+      "is_new_arrival": false
+    }
+  ]
 }
 ```
 
@@ -302,7 +331,10 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
     "name": "DVD Коллекция",
     "type": "dvd",
     "path": "D:\\",
+    "volume_label": "DVD_001",
+    "catalog_id": "DVD-TEST-001",
     "is_active": true,
+    "availability_status": "available",
     "books_count": 45,
     "last_scanned": "2024-01-15T10:30:00"
   }
@@ -331,9 +363,15 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
   "message": "Scan completed for Внешний HDD",
   "scanned": 50,
   "imported": 12,
-  "skipped": 38
+  "confirmed": 35,
+  "missing": 3,
+  "missing_books": [...]
 }
 ```
+
+#### GET /api/sources/{id}/books
+
+**Response:** Список книг в хранилище с полями `is_available`, `is_new_arrival`
 
 #### GET /api/sources/discover
 
@@ -346,6 +384,16 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
   {"drive_letter": "D", "label": "Data", "type": "removable"}
 ]
 ```
+
+#### Setup API (первичная настройка)
+
+- `GET /api/setup/status` - статус настройки
+- `GET /api/setup/drives` - список доступных дисков
+- `POST /api/setup/select-folder` - диалог выбора папки
+- `POST /api/setup/save-path` - сохранение пути в config.py
+- `POST /api/setup/scan` - первичное сканирование
+- `POST /api/setup/skip` - пропуск настройки
+- `POST /api/setup/initialize` - сброс библиотеки
 
 ## Развертывание
 

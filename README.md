@@ -9,12 +9,15 @@
 - Категоризация и тегирование книг
 - **Управление несколькими хранилищами** (HDD, SSD, DVD, NAS, сетевые папки)
 - **Идентификация носителей** (catalog.json или метка тома)
-- **Обновление при повторном сканировании** (все поля)
+- **Подтверждение наличия** - при сканировании книги подтверждаются без перезаписи данных
+- **Новые поступления** - флаг `is_new_arrival` (сбрасывается через 7 дней)
+- **Фильтрация по наличию** - доступно/отсутствует/новые поступления
+- **Цветовая индикация** - зелёный (в наличии), красный (отсутствует)
 - **Автоопределение подключенных дисков**
 - Веб-интерфейс для просмотра каталога
 - **Унифицированный поиск и фильтрация** (Поиск/Фильтр/Сортировка/Сброс)
 - **Сортировка** по дате, названию, автору, году, страницам
-- **Фильтрация** по формату, категории, году, хранилищу
+- **Фильтрация** по формату, категории, году, хранилищу, наличию
 - Доступ к библиотеке через браузер в локальной сети
 
 ## Требования
@@ -48,27 +51,30 @@ pip install fastapi uvicorn aiosqlite
 
 ```
 Library/
-├── library.db          # База данных SQLite
-├── README.md           # Этот файл
-├── ARCHITECTURE.md     # Архитектура системы
-├── config.py           # Конфигурация
-├── requirements.txt    # Зависимости
+├── library.db           # База данных SQLite
+├── README.md            # Этот файл
+├── AGENTS.md            # Документация для AI агентов
+├── ARCHITECTURE.md      # Архитектура системы
+├── config.py            # Конфигурация
+├── requirements.txt     # Зависимости
+├── reset_db.py          # Сброс базы данных
+├── start_server.cmd     # Скрипт запуска
 ├── app/
-│   ├── __init__.py
-│   ├── main.py         # FastAPI приложение
-│   ├── models.py       # Pydantic модели
-│   ├── database.py     # Подключение к БД
-│   ├── schemas.py       # SQLAlchemy модели
+│   ├── main.py          # FastAPI приложение
+│   ├── database.py      # SQLite + FTS5, логика доступности
+│   ├── models.py        # Pydantic модели
 │   └── routers/
-│       ├── __init__.py
-│       ├── books.py    # API книг
-│       └── search.py   # API поиска
+│       ├── books.py     # API книг
+│       ├── search.py    # API поиска
+│       ├── sources.py   # API хранилищ
+│       └── welcome.py   # Настройка и About API
 ├── services/
-│   ├── __init__.py
-│   ├── importer.py    # Импорт из C:\Book\
-│   └── search.py       # Поисковые функции
+│   ├── importer.py     # Импорт, сканирование, новые поступления
+│   └── drives.py       # Обнаружение дисков (WMI)
 └── web/
-    └── index.html      # Веб-интерфейс
+    ├── index.html       # SPA интерфейс (каталог, фильтры)
+    ├── setup.html       # Мастер первичной настройки
+    └── about.html       # Страница "О программе"
 ```
 
 ## Быстрый старт
@@ -108,21 +114,31 @@ SERVER_PORT = 8000               # Порт сервера
 | Метод | Endpoint | Описание |
 |-------|----------|----------|
 | GET | `/` | Веб-интерфейс |
-| GET | `/api/books` | Список всех книг |
+| GET | `/about` | Страница "О программе" |
+| GET | `/setup` | Мастер первичной настройки |
+| GET | `/api/health` | Проверка работоспособности |
+| GET | `/api/books` | Список книг (параметры: limit, offset, category, format, year, source_id, sort_by, **availability**) |
 | GET | `/api/books/{id}` | Информация о книге |
-| GET | `/api/search` | Полнотекстовый поиск |
+| GET | `/api/search` | Полнотекстовый поиск (параметр **availability**) |
 | GET | `/api/categories` | Список категорий |
 | GET | `/api/stats` | Статистика библиотеки |
-| GET | `/api/sources` | Список хранилищ |
-| POST | `/api/sources` | Добавить хранилище |
-| DELETE | `/api/sources/{id}` | Удалить хранилище |
-| POST | `/api/sources/{id}/scan` | Сканировать хранилище |
+| GET/POST | `/api/sources` | Список/добавление хранилищ |
+| GET/PUT/DELETE | `/api/sources/{id}` | CRUD хранилища |
+| POST | `/api/sources/{id}/scan` | Сканирование (возвращает: scanned, imported, confirmed, missing, missing_books) |
+| GET | `/api/sources/{id}/books` | Книги в хранилище |
 | GET | `/api/sources/discover` | Автоопределение дисков |
+| GET | `/api/setup/status` | Статус первичной настройки |
+| GET | `/api/setup/drives` | Список доступных дисков |
+| POST | `/api/setup/select-folder` | Диалог выбора папки |
+| POST | `/api/setup/save-path` | Сохранение пути в config.py |
+| POST | `/api/setup/scan` | Первичное сканирование |
+| POST | `/api/setup/skip` | Пропуск настройки |
+| POST | `/api/setup/initialize` | Сброс библиотеки |
 
 ### Параметры /api/books
 
 ```
-GET /api/books?limit=20&offset=0&category=Programming&format=pdf&year=2020&source_id=1&sort_by=title
+GET /api/books?limit=20&offset=0&category=Programming&format=pdf&year=2020&source_id=1&sort_by=title&availability=new
 ```
 
 - `limit` - количество результатов (по умолчанию 20)
@@ -132,11 +148,12 @@ GET /api/books?limit=20&offset=0&category=Programming&format=pdf&year=2020&sourc
 - `year` - год издания
 - `source_id` - ID хранилища
 - `sort_by` - сортировка: date, title, author, year, pages
+- `availability` - фильтр по наличию: `available`, `missing`, `new`
 
 ### Параметры /api/search
 
 ```
-GET /api/search?q=python&format=pdf&year=2020&sort_by=title
+GET /api/search?q=python&format=pdf&year=2020&sort_by=title&availability=new
 ```
 
 - `q` - поисковый запрос
@@ -147,6 +164,7 @@ GET /api/search?q=python&format=pdf&year=2020&sort_by=title
 - `sort_by` - сортировка: date, title, author, pages
 - `limit` - количество результатов
 - `offset` - смещение
+- `availability` - фильтр по наличию: `available`, `missing`, `new`
 
 ## Формат файла описания (.txt)
 
@@ -201,10 +219,18 @@ E:\
 2. Метка тома (volume label) диска
 3. Fallback: путь к файлу
 
-### Поведение при повторном сканировании
+### Поведение при сканировании
 
-- Если книга с тем же `source_id + relative_path` существует → **обновляются ВСЕ поля** (метаданные, обложка)
-- При смене буквы диска (E:\ → F:\) книги корректно перепривязываются по `catalog_id` или `volume_label`
+**Логика сканирования:**
+- Существующие книги: подтверждение наличия (обновление `is_available`, `last_seen`) без перезаписи данных
+- Новые книги: добавление с флагом `is_new_arrival = 1`
+- Отсутствующие книги: пометка `is_available = 0` (красный цвет карточки)
+- Флаг "Новое поступление" сбрасывается через 7 дней после подтверждения
+
+**Идентификация хранилища:**
+1. `catalog.json` → `id` (самый надёжный)
+2. Метка тома (volume label) диска
+3. Fallback: путь к файлу
 
 ## Запуск как системная служба (Windows)
 
