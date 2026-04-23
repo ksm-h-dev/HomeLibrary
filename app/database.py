@@ -85,6 +85,11 @@ async def init_db():
             await db.commit()
         except:
             pass
+        try:
+            await db.execute("ALTER TABLE books ADD COLUMN cover_ext TEXT DEFAULT ''")
+            await db.commit()
+        except:
+            pass
         await db.commit()
 
 
@@ -359,8 +364,10 @@ async def insert_book(db: aiosqlite.Connection, book_data: dict):
 
 
 async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
-    await db.execute(
-        """
+    desc_value = book_data.get("description")
+    if desc_value is not None:
+        await db.execute(
+            """
         UPDATE books SET
             title = COALESCE(?, title),
             author = COALESCE(?, author),
@@ -368,24 +375,50 @@ async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
             publisher = COALESCE(?, publisher),
             year = COALESCE(?, year),
             pages = COALESCE(?, pages),
-            description = COALESCE(?, description),
+            description = ?,
             category_id = COALESCE(?, category_id),
             language = COALESCE(?, language)
         WHERE id = ?
         """,
-        (
-            book_data.get("title"),
-            book_data.get("author"),
-            book_data.get("isbn"),
-            book_data.get("publisher"),
-            book_data.get("year"),
-            book_data.get("pages"),
-            book_data.get("description"),
-            book_data.get("category_id"),
-            book_data.get("language"),
-            book_id,
-        ),
-    )
+            (
+                book_data.get("title"),
+                book_data.get("author"),
+                book_data.get("isbn"),
+                book_data.get("publisher"),
+                book_data.get("year"),
+                book_data.get("pages"),
+                desc_value,
+                book_data.get("category_id"),
+                book_data.get("language"),
+                book_id,
+            ),
+        )
+    else:
+        await db.execute(
+            """
+        UPDATE books SET
+            title = COALESCE(?, title),
+            author = COALESCE(?, author),
+            isbn = COALESCE(?, isbn),
+            publisher = COALESCE(?, publisher),
+            year = COALESCE(?, year),
+            pages = COALESCE(?, pages),
+            category_id = COALESCE(?, category_id),
+            language = COALESCE(?, language)
+        WHERE id = ?
+        """,
+            (
+                book_data.get("title"),
+                book_data.get("author"),
+                book_data.get("isbn"),
+                book_data.get("publisher"),
+                book_data.get("year"),
+                book_data.get("pages"),
+                book_data.get("category_id"),
+                book_data.get("language"),
+                book_id,
+            ),
+        )
     await db.commit()
 
 
@@ -894,7 +927,7 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
 
 async def reset_stale_new_arrivals(db: aiosqlite.Connection, source_id: int):
     """Сброс флага is_new_arrival для книг старше 7 дней.
-    
+
     Вызывается перед сканированием хранилища.
     Флаг сбрасывается только если книга была подтверждена более 7 дней назад.
     """
@@ -908,3 +941,128 @@ async def reset_stale_new_arrivals(db: aiosqlite.Connection, source_id: int):
         (source_id,),
     )
     await db.commit()
+
+
+async def export_book_to_json(db: aiosqlite.Connection, book_id: int) -> dict:
+    """Экспорт данных книги в .json файл.
+
+    Файл создаётся в той же директории, что и книга:
+    {source_path}/{category}/{book_filename}.json
+    """
+    book = await get_book_by_id(db, book_id)
+    if not book:
+        return {"success": False, "message": "Book not found"}
+
+    source_path = book.get("source_name", "")
+    cursor = await db.execute("SELECT path FROM sources WHERE id = ?", (book.get("source_id"),))
+    source_row = await cursor.fetchone()
+    if not source_row:
+        return {"success": False, "message": "Source not found"}
+
+    source_base_path = source_row[0]
+
+    book_relative_path = book.get("relative_path", "")
+    book_dir = os.path.dirname(book_relative_path) if book_relative_path else ""
+    book_filename = os.path.splitext(os.path.basename(book.get("file_path", "book")))[0]
+
+    json_dir = os.path.join(source_base_path, book_dir) if book_dir else source_base_path
+    json_path = os.path.join(json_dir, f"{book_filename}.json")
+
+    os.makedirs(json_dir, exist_ok=True)
+
+    json_data = {
+        "version": "1.0",
+        "book_id": book_id,
+        "title": book.get("title", ""),
+        "author": book.get("author", ""),
+        "publisher": book.get("publisher", ""),
+        "isbn": book.get("isbn", ""),
+        "year": book.get("year"),
+        "pages": book.get("pages"),
+        "format": book.get("format", ""),
+        "description": book.get("description", ""),
+        "language": book.get("language", "ru"),
+        "source_url": book.get("source_url", ""),
+        "cover_ext": book.get("cover_ext", ""),
+    }
+
+    import json
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+    return {"success": True, "path": json_path}
+
+
+async def move_book_files(db: aiosqlite.Connection, book_id: int, new_category_id: int) -> dict:
+    """Перемещение всех файлов книги в новую категорию.
+
+    Перемещаемые файлы: .djvu/.pdf/.rar/.zip, .txt, .jpg/.png и .json
+    Возвращает обновлённые пути книги.
+    """
+    book = await get_book_by_id(db, book_id)
+    if not book:
+        return {"success": False, "message": "Book not found", "old_path": "", "new_path": ""}
+
+    old_relative_path = book.get("relative_path", "")
+    old_file_path = book.get("file_path", "")
+
+    if not old_file_path:
+        return {"success": False, "message": "File path empty", "old_path": "", "new_path": ""}
+
+    old_base = os.path.basename(old_file_path)
+    old_ext = os.path.splitext(old_base)[1]
+    old_filename = os.path.splitext(old_base)[0]
+    old_dir = os.path.dirname(old_file_path)
+
+    cursor = await db.execute("SELECT path FROM sources WHERE id = ?", (book.get("source_id"),))
+    source_row = await cursor.fetchone()
+    if not source_row:
+        return {"success": False, "message": "Source not found", "old_path": old_file_path, "new_path": ""}
+
+    source_base_path = source_row[0]
+
+    cursor = await db.execute("SELECT name FROM categories WHERE id = ?", (new_category_id,))
+    cat_row = await cursor.fetchone()
+    new_category_name = cat_row[0] if cat_row else "Unknown"
+
+    new_dir = os.path.join(source_base_path, new_category_name)
+    os.makedirs(new_dir, exist_ok=True)
+
+    extensions_to_move = [
+        old_ext,
+        ".txt",
+        ".html",
+        ".jpg",
+        ".jpeg",
+        ".png",
+        ".gif",
+        ".json",
+    ]
+
+    new_file_path = os.path.join(new_dir, old_base)
+    new_relative_path = os.path.join(new_category_name, old_base)
+
+    if old_file_path != new_file_path:
+        if os.path.exists(old_file_path):
+            os.rename(old_file_path, new_file_path)
+        new_file_path = os.path.normpath(new_file_path)
+
+    for ext in extensions_to_move:
+        if ext == old_ext:
+            continue
+        old附属 = os.path.join(old_dir, f"{old_filename}{ext}")
+        new附属 = os.path.join(new_dir, f"{old_filename}{ext}")
+        if os.path.exists(old附属):
+            try:
+                os.rename(old附属, new附属)
+            except FileExistsError:
+                os.remove(new附属)
+                os.rename(old附属, new附属)
+
+    return {
+        "success": True,
+        "old_path": old_file_path,
+        "new_path": new_file_path,
+        "new_relative_path": new_relative_path,
+        "new_dir": new_dir,
+    }

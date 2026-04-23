@@ -16,6 +16,7 @@ class BookBase(BaseModel):
     file_path: str = ""
     relative_path: str = ""
     cover_path: str = ""
+    cover_ext: str = ""
     category_id: Optional[int] = None
     source_id: Optional[int] = None
     language: str = "ru"

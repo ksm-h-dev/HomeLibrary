@@ -12,6 +12,8 @@ from app.database import (
     get_book_by_id,
     update_book,
     get_categories,
+    export_book_to_json,
+    move_book_files,
 )
 from app.models import BookResponse, BookListResponse, BookUpdate, CategoryResponse
 
@@ -66,7 +68,23 @@ async def update_book_endpoint(
     if not existing:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    await update_book(db, book_id, book.model_dump(exclude_none=True))
+    old_category_id = existing.get("category_id")
+    update_data = book.model_dump(exclude_none=True)
+    new_category_id = update_data.get("category_id")
+
+    await update_book(db, book_id, update_data)
+
+    if new_category_id is not None and new_category_id != old_category_id:
+        move_result = await move_book_files(db, book_id, new_category_id)
+        if move_result.get("success"):
+            await db.execute(
+                "UPDATE books SET file_path = ?, relative_path = ? WHERE id = ?",
+                (move_result["new_path"], move_result["new_relative_path"], book_id),
+            )
+            await db.commit()
+
+    await export_book_to_json(db, book_id)
+
     return await get_book_by_id(db, book_id)
 
 

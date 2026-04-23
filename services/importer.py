@@ -124,22 +124,55 @@ async def parse_metadata_file(filepath: str) -> dict:
     return metadata
 
 
-def find_metadata_file(book_path: str) -> str | None:
+def find_metadata_file(book_path: str) -> tuple[str | None, str]:
     base = Path(book_path).with_suffix("")
-    for ext in [".txt", ".html", ".dusd"]:
+    for ext in [".json", ".txt", ".html", ".dusd"]:
         meta_file = str(base) + ext
         if os.path.exists(meta_file):
-            return meta_file
-    return None
+            return meta_file, ext
+    return None, ""
 
 
-def find_cover_file(book_path: str) -> str | None:
-    base = Path(book_path).with_suffix("")
+async def parse_json_metadata_file(filepath: str) -> dict:
+    import json
+    metadata = {
+        "title": "",
+        "author": "",
+        "publisher": "",
+        "isbn": "",
+        "year": None,
+        "pages": None,
+        "format": "",
+        "file_size": 0,
+        "description": "",
+        "source_url": "",
+    }
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        metadata["title"] = data.get("title", "")
+        metadata["author"] = data.get("author", "")
+        metadata["publisher"] = data.get("publisher", "")
+        metadata["isbn"] = data.get("isbn", "")
+        metadata["year"] = data.get("year")
+        metadata["pages"] = data.get("pages")
+        metadata["format"] = data.get("format", "")
+        metadata["description"] = data.get("description", "")
+        metadata["source_url"] = data.get("source_url", "")
+    except Exception as e:
+        print(f"Error parsing JSON metadata {filepath}: {e}")
+    return metadata
+
+
+def find_cover_file(book_path: str) -> tuple[str | None, str]:
+    book_dir = Path(book_path).parent
+    if not book_dir.exists():
+        return None, ""
     for ext in COVER_EXTENSIONS:
-        cover_file = str(base) + f".{ext}"
-        if os.path.exists(cover_file):
-            return cover_file
-    return None
+        files = [f for f in os.listdir(book_dir) if f.lower().endswith(f'.{ext}')]
+        if files:
+            return str(book_dir / files[0]), ext
+    return None, ""
 
 
 def compute_relative_path(root_path: str, file_path: str) -> str:
@@ -178,17 +211,21 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 "file_size": os.path.getsize(filepath),
             }
 
-            meta_file = find_metadata_file(filepath)
+            meta_file, meta_ext = find_metadata_file(filepath)
             if meta_file:
-                metadata = await parse_metadata_file(meta_file)
+                if meta_ext == ".json":
+                    metadata = await parse_json_metadata_file(meta_file)
+                else:
+                    metadata = await parse_metadata_file(meta_file)
                 book_info.update(metadata)
                 book_info["file_size"] = (
                     metadata.get("file_size") or book_info["file_size"]
                 )
 
-            cover_file = find_cover_file(filepath)
+            cover_file, cover_ext = find_cover_file(filepath)
             if cover_file:
                 book_info["cover_path"] = cover_file
+                book_info["cover_ext"] = cover_ext
 
             if not book_info.get("title"):
                 book_info["title"] = (

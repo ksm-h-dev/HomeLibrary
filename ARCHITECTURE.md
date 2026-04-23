@@ -88,6 +88,7 @@
 | file_path | TEXT | Полный путь к файлу книги |
 | relative_path | TEXT | Относительный путь от корня хранилища |
 | cover_path | TEXT | Путь к обложке |
+| cover_ext | TEXT | Расширение обложки (jpg, png, webp, bmp, tiff) |
 | category_id | INTEGER | Внешний ключ на categories |
 | source_id | INTEGER | Внешний ключ на sources |
 | language | TEXT | Язык (ru, en) |
@@ -160,9 +161,16 @@
 **Функции:**
 
 - `scan_directory(path, source_id)` - рекурсивное сканирование каталога
-- `parse_metadata_file(filepath)` - парсинг .txt файла
+- `parse_metadata_file(filepath)` - парсинг .json или .txt файла
+- `parse_metadata_json(filepath)` - парсинг .json метаданных
+- `parse_metadata_txt(filepath)` - парсинг .txt метаданных
 - `extract_book_info(filename)` - извлечение информации из имени файла
+- `find_cover_file(book_path)` - поиск обложки (jpg, png, gif, webp, bmp, tiff)
 - `import_from_source(source_id, directory)` - импорт с логикой наличия
+- `export_book_to_json(book_id, directory)` - экспорт метаданных в .json при редактировании книги
+- `move_book_files(book_id, new_directory)` - перемещение всех файлов книги
+
+**Приоритет метаданных:** .json → .txt
 
 **Алгоритм сканирования:**
 
@@ -199,9 +207,11 @@
 
 ```
 C:\Book\book.pdf     ─┐
-C:\Book\book.txt      │──► Importer ──► Database
-C:\Book\book.jpg     ─┘
+C:\Book\book.json    │──► Importer ──► Database
+C:\Book\cover.jpg   ─┘
 ```
+
+**Приоритет метаданных:** .json → .txt
 
 ### Поиск книги
 
@@ -259,6 +269,7 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
   "description": "Описание книги...",
   "file_path": "C:/Book/book.pdf",
   "cover_url": "/api/covers/1",
+  "cover_ext": "jpg",
   "category": "Программирование",
   "tags": ["python", "programming"]
 }

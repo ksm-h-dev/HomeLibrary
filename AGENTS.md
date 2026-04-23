@@ -42,13 +42,14 @@ H:\Work.Py\HomeLibrary\
 
 | File | Purpose |
 |------|---------|
-| `config.py` | Books dir, DB path, server port, DEFAULT_SOURCE_PATH |
-| `services/importer.py` | Scans filesystem, parses metadata (KOI8-R, CP1251), imports to DB, confirms availability, marks new arrivals |
+| `config.py` | Books dir, DB path, server port, DEFAULT_SOURCE_PATH, COVER_EXTENSIONS |
+| `services/importer.py` | Scans filesystem, parses metadata (.json/.txt, KOI8-R/CP1251), imports to DB, confirms availability, marks new arrivals |
 | `services/drives.py` | Discovers Windows drives via WMI/PowerShell |
-| `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers, availability logic, new arrivals handling |
+| `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers, export_book_to_json, move_book_files, availability logic, new arrivals handling |
+| `app/routers/books.py` | Book CRUD API with export/move on update |
 | `app/routers/sources.py` | Storage management API (CRUD, scan with confirmed/imported/missing stats) |
 | `app/routers/welcome.py` | First-run setup, about page API |
-| `web/index.html` | Browser client - search, browse, manage sources, availability filters, color-coded cards |
+| `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards |
 | `web/setup.html` | First-run setup wizard |
 | `web/about.html` | About page |
 
@@ -57,9 +58,7 @@ H:\Work.Py\HomeLibrary\
 - SQLite with FTS5 virtual table for full-text search
 - Triggers auto-update FTS index on INSERT/UPDATE/DELETE to `books`
 - `books` table: unique index on `source_id + relative_path` (no duplicates)
-- `sources` table: storage locations (HDD, SSD, DVD, NAS, network)
-- `sources` has `volume_label` and `catalog_id` for portable media identification
-- New fields: `is_available` (availability flag), `is_new_arrival` (new 7-day flag), `last_seen` (timestamp)
+- New fields: `cover_ext` (обложка: jpg/png/gif/webp/bmp/tiff), `is_available`, `is_new_arrival`, `last_seen`
 
 ## Storage Sources
 
@@ -100,6 +99,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/health` | GET | Health check |
 | `/api/books` | GET | List books (limit, offset, category, format, year, source_id, sort_by, **availability**) |
 | `/api/books/{id}` | GET | Book details |
+| PUT | `/api/books/{id}` | Update book (exports metadata to .json, moves files) |
 | `/api/search?q=...` | GET | Full-text search (FTS5) with **availability** filter |
 | `/api/categories` | GET | Category list |
 | `/api/stats` | GET | Library statistics |
@@ -137,8 +137,8 @@ DEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", "H:/Book")
 SHOW_WELCOME = os.getenv("LIBRARY_SHOW_WELCOME", "true")
 
 SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf"]
-SUPPORTED_METADATA_EXT = ["txt", "html"]
-COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif"]
+SUPPORTED_METADATA_EXT = ["txt", "json"]
+COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 ```
 
 ## Features
@@ -147,9 +147,12 @@ COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif"]
 - **Каскадное удаление** хранилищ и книг
 - **Инициализация библиотеки** - полный сброс базы данных
 - **Автосканирование** при первом запуске с конфигом
-- **Метаданные** - поддержка KOI8-R, CP1251 кодировок
+- **Метаданные** - поддержка KOI8-R, CP1251, .json приоритет над .txt
 - **Категория** - определяется по имени папки
 - **Подтверждение наличия** - при сканировании книги подтверждаются без перезаписи данных
 - **Новые поступления** - флаг `is_new_arrival` (сбрасывается через 7 дней)
 - **Фильтрация по наличию** - доступно/отсутствует/новые поступления
 - **Цветовая индикация** - зелёный (в наличии), красный (отсутствует)
+- **Экспорт метаданных** - при редактировании книги метаданные экспортируются в .json
+- **Перемещение файлов** - при изменении пути перемещаются все файлы книги (.pdf + .json + .txt + обложка)
+- **Расширенные форматы обложек** - bmp, webp, tiff

@@ -11,4 +11,4 @@ SHOW_WELCOME = os.getenv("LIBRARY_SHOW_WELCOME", "true")
 
 SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf"]
 SUPPORTED_METADATA_EXT = ["txt", "html"]
-COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif"]
+COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "bmp", "webp", "tiff"]

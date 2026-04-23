@@ -45,6 +45,8 @@
         .book-card:hover { transform: translateY(-4px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         .book-card h3 { font-size: 16px; margin-bottom: 8px; color: #2c3e50; }
         .book-card .author { color: #666; font-size: 14px; margin-bottom: 10px; }
+        .cover-icon { cursor: pointer; margin-right: 8px; font-size: 18px; vertical-align: middle; }
+        .cover-icon:hover { opacity: 0.7; }
         .book-card .isbn { color: #999; font-size: 12px; margin-top: 4px; font-style: italic; }
         .book-card .meta { font-size: 12px; color: #999; display: flex; gap: 10px; flex-wrap: wrap; }
         .book-card .description { font-size: 13px; color: #555; margin-top: 10px; line-height: 1.4; max-height: 60px; overflow: hidden; }
@@ -65,6 +67,7 @@
         .modal .form-group { margin-bottom: 15px; }
         .modal .form-group label { display: block; margin-bottom: 5px; font-size: 13px; color: #666; }
         .modal .form-group input, .modal .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .modal .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; min-height: 120px; max-height: 150px; overflow-y: auto; }
         .modal .buttons { display: flex; gap: 10px; margin-top: 20px; }
         .modal .buttons button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
         .modal .buttons .save-btn { background: #27ae60; color: white; }
@@ -136,9 +139,18 @@
         .settings-btn-danger { padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
         .settings-btn-danger:hover { background: #c0392b; }
         .settings-divider { margin: 20px 0; border: none; border-top: 1px solid #ddd; }
+
+        .cover-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; }
+        .cover-modal.active { display: flex; justify-content: center; align-items: center; }
+        .cover-modal img { max-width: 80%; max-height: 80%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        .cover-modal .close-btn { position: absolute; top: 20px; right: 20px; background: white; color: #333; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; }
     </style>
 </head>
 <body>
+    <div id="coverModal" class="cover-modal" onclick="closeCoverModal()">
+        <button class="close-btn" onclick="closeCoverModal()">X</button>
+        <img id="coverModalImg" src="" alt="Обложка книги">
+    </div>
     <div id="editModal" class="modal-overlay">
         <div class="modal">
             <h2>Редактирование книги</h2>
@@ -163,6 +175,10 @@
                 <select id="editCategory">
                     <option value="">— Без категории —</option>
                 </select>
+            </div>
+            <div class="form-group">
+                <label>Описание</label>
+                <textarea id="editDescription" rows="4"></textarea>
             </div>
             <div class="buttons">
                 <button class="save-btn" onclick="saveBook()">Сохранить</button>
@@ -463,7 +479,7 @@
                         const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
                         const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                         card.innerHTML = `
-                            <h3>${escapeHtml(book.title || 'Без названия')}</h3>
+                            <h3>${book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext)) + '\')" title="Показать обложку">&#128247;</span>' : ''}${escapeHtml(book.title || 'Без названия')}</h3>
                             <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
                             ${book.isbn ? `<div class="isbn">ISBN: ${escapeHtml(book.isbn)}</div>` : ''}
                             <div class="meta">
@@ -553,7 +569,7 @@
                         const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                         let title = book.title_hl || book.title || 'Без названия';
                         card.innerHTML = `
-                            <h3>${title}</h3>
+                            <h3>${book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext) : '') + '\')" title="Показать обложку">&#128247;</span>' : ''}${title}</h3>
                             <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
                             ${book.isbn ? `<div class="isbn">ISBN: ${escapeHtml(book.isbn)}</div>` : ''}
                             <div class="meta">
@@ -667,6 +683,7 @@
                         const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
                         const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                     let title = book.title_hl || book.title || 'Без названия';
+                    title = (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext) : '') + '\')" title="Показать обложку">&#128247;</span>' : '') + title;
                     card.innerHTML = `
                         <h3>${title}</h3>
                         <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
@@ -918,6 +935,7 @@
                 document.getElementById('editAuthor').value = book.author || '';
                 document.getElementById('editIsbn').value = book.isbn || '';
                 document.getElementById('editYear').value = book.year || '';
+                document.getElementById('editDescription').value = book.description || '';
                 
                 await loadCategoriesForEdit(book.category_id);
                 
@@ -961,6 +979,7 @@
                 author: document.getElementById('editAuthor').value,
                 isbn: document.getElementById('editIsbn').value || null,
                 year: document.getElementById('editYear').value ? parseInt(document.getElementById('editYear').value) : null,
+                description: document.getElementById('editDescription').value,
                 category_id: document.getElementById('editCategory').value ? parseInt(document.getElementById('editCategory').value) : null
             };
             
@@ -1103,6 +1122,17 @@
             } catch (e) {
                 alert('Ошибка: ' + e.message);
             }
+        }
+         
+        function showCoverModal(coverPath) {
+            if (!coverPath) return;
+            document.getElementById('coverModalImg').src = coverPath;
+            document.getElementById('coverModal').classList.add('active');
+        }
+        
+        function closeCoverModal() {
+            document.getElementById('coverModal').classList.remove('active');
+            document.getElementById('coverModalImg').src = '';
         }
         
         async function checkSetup() {
