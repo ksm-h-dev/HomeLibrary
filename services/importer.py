@@ -204,6 +204,21 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
 
 
 async def import_from_source(source_id: int, directory: str = None) -> dict:
+    """Сканирование хранилища с подтверждением наличия и отслеживанием новых поступлений.
+
+    Логика:
+    1. Сброс устаревших флагов is_new_arrival (старше 7 дней)
+    2. Поиск идентификатора хранилища (catalog.json / volume_label)
+    3. Сканирование файловой системы
+    4. Обработка каждого файла:
+       - Существует в БД → подтверждение наличия (confirm_book_presence)
+       - Новый файл → добавление через upsert_book_preserve (is_new_arrival=1)
+    5. Пометка отсутствующих книг (is_available=0)
+    6. Обновление времени сканирования хранилища
+
+    Returns:
+        dict: {"scanned": int, "imported": int, "confirmed": int, "missing": int, "missing_books": list}
+    """
     from app.database import (
         init_db,
         get_or_create_category,
@@ -258,6 +273,7 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
 
     await init_db()
 
+    # Сброс устаревших флагов is_new_arrival (старше 7 дней)
     await reset_stale_new_arrivals(db, source_id)
 
     books = await scan_directory(directory, source_id)
@@ -284,11 +300,13 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         existing = await cursor.fetchone()
 
         if existing:
+            # Книга существует - подтверждаем наличие (is_available=1, last_seen)
             book_id = existing[0]
             await confirm_book_presence(db, book_id)
             confirmed += 1
             print(f"  + Confirmed: {book.get('title', 'Unknown')}")
         else:
+            # Новая книга - добавляем с флагом is_new_arrival=1
             book_id, is_new = await upsert_book_preserve(db, book)
             if is_new:
                 imported += 1
@@ -296,13 +314,16 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
             else:
                 confirmed += 1
 
+    # Получаем все книги хранилища из БД для поиска отсутствующих
     all_source_books = await get_books_by_source_all(db, source_id)
     all_db_paths = set(book["relative_path"] for book in all_source_books)
 
-    paths_to_exclude = set(found_paths)
-    missing_paths = all_db_paths - paths_to_exclude
+    paths_to_include = set(found_paths)
+    # Книги, которые были в БД, но не найдены при сканировании
+    missing_paths = all_db_paths - paths_to_include
 
     if missing_paths:
+        # Помечаем отсутствующие книги (is_available=0)
         placeholders = ",".join("?" * len(missing_paths))
         await db.execute(
             f"UPDATE books SET is_available = 0 WHERE source_id = ? AND relative_path IN ({placeholders})",

@@ -30,6 +30,13 @@ async def list_books(
     availability: Optional[str] = Query(None, regex="^(available|missing|new)$"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
+    """Получение списка книг с фильтрацией.
+
+    Параметр availability:
+    - "available" - только книги в наличии (is_available=1)
+    - "missing" - только отсутствующие (is_available=0)
+    - "new" - новые поступления (is_new_arrival=1, сортировка по last_seen DESC)
+    """
     books, total = await get_all_books(
         db, limit, offset, category, format, year, source_id, sort_by, availability
     )

@@ -108,6 +108,13 @@ async def get_all_books(
     sort_by: str = "date",
     availability: str = None,
 ):
+    """Получение списка книг с фильтрацией.
+
+    Параметр availability:
+    - "available": is_available=1 (только книги в наличии)
+    - "missing": is_available=0 (только отсутствующие)
+    - "new": is_new_arrival=1 (новые поступления, сортировка по last_seen DESC)
+    """
     query = """
         SELECT b.*, c.name as category_name, s.name as source_name
         FROM books b
@@ -128,6 +135,7 @@ async def get_all_books(
     if source_id:
         conditions.append("b.source_id = ?")
         params.append(source_id)
+    # Фильтрация по наличию
     if availability == "available":
         conditions.append("b.is_available = 1")
     elif availability == "missing":
@@ -137,6 +145,7 @@ async def get_all_books(
     if conditions:
         query += " WHERE " + " AND ".join(conditions)
     sort_clause = SORT_OPTIONS.get(sort_by, "b.id DESC")
+    # Новые поступления сортируем по времени подтверждения
     if availability == "new":
         sort_clause = "b.last_seen DESC"
     query += f" ORDER BY {sort_clause} LIMIT ? OFFSET ?"
@@ -180,6 +189,14 @@ async def search_books(
     sort_by: str = "date",
     availability: str = None,
 ):
+    """Полнотекстовый поиск с фильтрацией по наличию.
+
+    Использует FTS5 для поиска по title, author, description.
+    Параметр availability:
+    - "available": только книги в наличии (is_available=1)
+    - "missing": только отсутствующие (is_available=0)
+    - "new": новые поступления (is_new_arrival=1), сортировка по last_seen DESC
+    """
     sql = """
         SELECT b.*, c.name as category_name, s.name as source_name,
                b.title as title_hl,
@@ -740,6 +757,13 @@ async def get_books_by_source_all(db: aiosqlite.Connection, source_id: int):
 
 
 async def confirm_book_presence(db: aiosqlite.Connection, book_id: int):
+    """Подтверждение наличия книги при сканировании.
+
+    Обновляет:
+    - is_available = 1 (книга в наличии)
+    - last_seen = CURRENT_TIMESTAMP (время последнего подтверждения)
+    Флаг is_new_arrival НЕ сбрасывается (сбрасывается через 7 дней)
+    """
     await db.execute(
         "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
         (book_id,),
@@ -748,12 +772,23 @@ async def confirm_book_presence(db: aiosqlite.Connection, book_id: int):
 
 
 async def mark_books_missing(db: aiosqlite.Connection, source_id: int, exclude_paths: list):
+    """Пометка отсутствующих книг в хранилище.
+
+    Книги, которых нет в exclude_paths, помечаются как отсутствующие:
+    - is_available = 0 (красный цвет карточки в UI)
+
+    Args:
+        source_id: ID хранилища
+        exclude_paths: список relative_path книг, которые ЕСТЬ в файловой системе
+    """
     if not exclude_paths:
+        # Все книги хранилища отсутствуют
         await db.execute(
             "UPDATE books SET is_available = 0 WHERE source_id = ?",
             (source_id,),
         )
     else:
+        # Помечаем только те, которых нет в списке найденных
         placeholders = ",".join("?" * len(exclude_paths))
         await db.execute(
             f"UPDATE books SET is_available = 0 WHERE source_id = ? AND relative_path NOT IN ({placeholders})",
@@ -763,6 +798,15 @@ async def mark_books_missing(db: aiosqlite.Connection, source_id: int, exclude_p
 
 
 async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
+    """Обновление или вставка книги с сохранением существующих данных.
+    
+    Логика:
+    - Если книга существует (source_id + relative_path):
+      * Подтверждает наличие (is_available=1, last_seen)
+      * НЕ перезаписывает данные (использует COALESCE)
+    - Если новая:
+      * Создает запись с флагом is_new_arrival=1
+    """
     source_id = book_data.get("source_id")
     relative_path = book_data.get("relative_path", "")
 
@@ -773,6 +817,7 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
     existing = await cursor.fetchone()
 
     if existing:
+        # Книга существует - обновляем только при необходимости
         book_id = existing[0]
         await db.execute(
             """
@@ -814,6 +859,7 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
         await db.commit()
         return book_id, False
     else:
+        # Новая книга - создаем с флагом нового поступления
         cursor = await db.execute(
             """
             INSERT INTO books (
@@ -847,6 +893,11 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
 
 
 async def reset_stale_new_arrivals(db: aiosqlite.Connection, source_id: int):
+    """Сброс флага is_new_arrival для книг старше 7 дней.
+    
+    Вызывается перед сканированием хранилища.
+    Флаг сбрасывается только если книга была подтверждена более 7 дней назад.
+    """
     await db.execute(
         """
         UPDATE books SET is_new_arrival = 0

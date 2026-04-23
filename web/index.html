@@ -421,12 +421,14 @@
                 const year = document.getElementById('yearFilter').value;
                 const sourceId = document.getElementById('sourceFilter').value;
                 const sortBy = document.getElementById('sortFilter').value;
+                // Фильтр наличия: available/missing/new
                 const availability = document.getElementById('availabilityFilter').value;
                 if (format) url += `&format=${format}`;
                 if (category) url += `&category=${encodeURIComponent(category)}`;
                 if (year) url += `&year=${year}`;
                 if (sourceId) url += `&source_id=${sourceId}`;
                 if (sortBy && sortBy !== 'date') url += `&sort_by=${sortBy}`;
+                // Добавляем параметр availability в URL если выбран
                 if (availability) url += `&availability=${availability}`;
                 
                 console.log('Fetching:', url);
@@ -650,18 +652,20 @@
                 container.innerHTML = '';
                 currentPage = page;
                 
-                data.books.forEach(book => {
-                    const card = document.createElement('div');
-                    let cardClass = 'book-card';
-                    if (book.is_available === false || book.is_available === 0) {
-                        cardClass += ' missing';
-                    } else {
-                        cardClass += ' available';
-                    }
-                    card.className = cardClass;
-                    const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
-                    const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
-                    const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
+                    data.books.forEach(book => {
+                        const card = document.createElement('div');
+                        let cardClass = 'book-card';
+                        // Цветовая индикация: зелёный (в наличии), красный (отсутствует)
+                        if (book.is_available === false || book.is_available === 0) {
+                            cardClass += ' missing';  // красный цвет
+                        } else {
+                            cardClass += ' available';  // зелёный цвет
+                        }
+                        card.className = cardClass;
+                        // Кнопка открытия файла: disabled если файла нет
+                        const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
+                        const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
+                        const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                     let title = book.title_hl || book.title || 'Без названия';
                     card.innerHTML = `
                         <h3>${title}</h3>

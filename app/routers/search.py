@@ -21,6 +21,13 @@ async def search(
     availability: Optional[str] = Query(None, regex="^(available|missing|new)$"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
+    """Полнотекстовый поиск с фильтрацией по наличию.
+
+    Параметр availability:
+    - "available" - только книги в наличии
+    - "missing" - только отсутствующие книги
+    - "new" - новые поступления (is_new_arrival=1), сортировка по last_seen DESC
+    """
     books, total = await search_books(
         db, q, format, category, year, source_id, limit, offset, sort_by, availability
     )
