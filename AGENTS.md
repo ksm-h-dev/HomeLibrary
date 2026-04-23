@@ -43,12 +43,12 @@ H:\Work.Py\HomeLibrary\
 | File | Purpose |
 |------|---------|
 | `config.py` | Books dir, DB path, server port, DEFAULT_SOURCE_PATH |
-| `services/importer.py` | Scans filesystem, parses metadata (KOI8-R, CP1251), imports to DB |
+| `services/importer.py` | Scans filesystem, parses metadata (KOI8-R, CP1251), imports to DB, confirms availability, marks new arrivals |
 | `services/drives.py` | Discovers Windows drives via WMI/PowerShell |
-| `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers |
-| `app/routers/sources.py` | Storage management API (CRUD, scan, discover) |
+| `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers, availability logic, new arrivals handling |
+| `app/routers/sources.py` | Storage management API (CRUD, scan with confirmed/imported/missing stats) |
 | `app/routers/welcome.py` | First-run setup, about page API |
-| `web/index.html` | Browser client - search, browse, manage sources |
+| `web/index.html` | Browser client - search, browse, manage sources, availability filters, color-coded cards |
 | `web/setup.html` | First-run setup wizard |
 | `web/about.html` | About page |
 
@@ -59,6 +59,7 @@ H:\Work.Py\HomeLibrary\
 - `books` table: unique index on `source_id + relative_path` (no duplicates)
 - `sources` table: storage locations (HDD, SSD, DVD, NAS, network)
 - `sources` has `volume_label` and `catalog_id` for portable media identification
+- New fields: `is_available` (availability flag), `is_new_arrival` (new 7-day flag), `last_seen` (timestamp)
 
 ## Storage Sources
 
@@ -71,7 +72,11 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 2. Volume label (метка тома Windows)
 3. Path fallback
 
-**Upsert behavior:** При повторном сканировании существующие книги обновляются, а не дублируются.
+**Логика сканирования:**
+- Существующие книги: подтверждение наличия (обновление `is_available`, `last_seen`) без перезаписи данных
+- Новые книги: добавление с флагом `is_new_arrival = 1`
+- Отсутствующие книги: пометка `is_available = 0` (красный цвет карточки)
+- Флаг "Новое поступление" сбрасывается через 7 дней после подтверждения
 
 ## First Run (Автозапуск)
 
@@ -93,14 +98,14 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/about` | GET | About page |
 | `/setup` | GET | First-run setup wizard |
 | `/api/health` | GET | Health check |
-| `/api/books` | GET | List books (limit, offset, category) |
+| `/api/books` | GET | List books (limit, offset, category, format, year, source_id, sort_by, **availability**) |
 | `/api/books/{id}` | GET | Book details |
-| `/api/search?q=...` | GET | Full-text search (FTS5) |
+| `/api/search?q=...` | GET | Full-text search (FTS5) with **availability** filter |
 | `/api/categories` | GET | Category list |
 | `/api/stats` | GET | Library statistics |
 | `/api/sources` | GET/POST | List/add storage sources |
 | `/api/sources/{id}` | GET/PUT/DELETE | Source CRUD |
-| `/api/sources/{id}/scan` | POST | Scan source and import books |
+| `/api/sources/{id}/scan` | POST | Scan source (returns: scanned, imported, confirmed, missing, missing_books) |
 | `/api/sources/{id}/books` | GET | Books in source |
 | `/api/sources/discover` | GET | Auto-detect Windows drives |
 | `/api/setup/status` | GET | Setup status |
@@ -116,6 +121,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 - FTS5 indexes: `title`, `author`, `description`
 - Search query format: `{query}*` (prefix search)
 - Search results include `title_hl` and `desc_snippet`
+- Search supports `availability` filter: `available`, `missing`, `new`
 
 ## Configuration (config.py)
 
@@ -143,3 +149,7 @@ COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif"]
 - **Автосканирование** при первом запуске с конфигом
 - **Метаданные** - поддержка KOI8-R, CP1251 кодировок
 - **Категория** - определяется по имени папки
+- **Подтверждение наличия** - при сканировании книги подтверждаются без перезаписи данных
+- **Новые поступления** - флаг `is_new_arrival` (сбрасывается через 7 дней)
+- **Фильтрация по наличию** - доступно/отсутствует/новые поступления
+- **Цветовая индикация** - зелёный (в наличии), красный (отсутствует)
