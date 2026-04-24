@@ -265,15 +265,27 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
   "year": 2020,
   "pages": 300,
   "format": "pdf",
+  "language": "ru",
   "file_size": 5242880,
   "description": "Описание книги...",
   "file_path": "C:/Book/book.pdf",
-  "cover_url": "/api/covers/1",
   "cover_ext": "jpg",
   "category": "Программирование",
-  "tags": ["python", "programming"]
+  "is_available": true,
+  "is_new_arrival": false
 }
 ```
+
+### GET /api/cover?path=...
+
+**Query Parameters:**
+- `path` (string, required): URL-encoded путь к файлу книги
+
+**Response:** Returns the cover image file (jpg, png, gif, bmp, webp, tiff)
+
+**Notes:**
+- Использует гибкий поиск обложки в папке с книгой
+- Ищет изображения по частичному совпадению имени файла
 
 ### GET /api/search
 
@@ -371,10 +383,11 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
 **Response:**
 ```json
 {
-  "message": "Scan completed for Внешний HDD",
+  "message": "Scan completed for Внешний HDD: 5 обложек найдено",
   "scanned": 50,
   "imported": 12,
   "confirmed": 35,
+  "covers_found": 5,
   "missing": 3,
   "missing_books": [...]
 }
@@ -433,3 +446,30 @@ netsh advfirewall firewall add rule name="Library Server" ^
 - API не требует аутентификации (локальная сеть)
 - CORS настроен для любых источников
 - Пути к файлам передаются клиенту для открытия в проводнике
+
+## Интерфейс клиента
+
+Веб-интерфейс состоит из трёх вкладок:
+
+### Каталог
+- Статистика (книг, категорий, хранилищ)
+- Поиск и фильтры (формат, категория, год, хранилище, сортировка, наличие)
+- Сетка карточек книг с обложками
+- Пагинация
+- Редактирование книги (название, автор, ISBN, год, издательство, страниц, формат, язык, описание)
+
+### Хранилища
+- Добавление хранилища (название, тип, путь)
+- Список подключённых дисков
+- Список хранилищ с книгами и статистикой
+- Сканирование хранилищ
+
+### Инструменты
+- Настройки (путь к библиотеке)
+- Инициализация библиотеки (сброс базы данных)
+
+**Модальные окна:**
+- Редактирование книги
+- Просмотр обложки
+- Настройки
+- Инициализация библиотеки

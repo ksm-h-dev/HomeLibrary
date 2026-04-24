@@ -141,11 +141,12 @@ async def scan_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)
     result = await import_from_source(source_id, directory)
 
     return {
-        "message": f"Scan completed for {source['name']}",
+        "message": f"Scan completed for {source['name']}: {result.get('covers_found', 0)} обложек найдено",
         "source_id": result.get("source_id"),
         "scanned": result.get("scanned", 0),
         "imported": result.get("imported", 0),
         "confirmed": result.get("confirmed", 0),
+        "covers_found": result.get("covers_found", 0),
         "missing": result.get("missing", 0),
         "missing_books": result.get("missing_books", []),
     }

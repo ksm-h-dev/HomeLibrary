@@ -317,6 +317,7 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     scanned = len(books)
     imported = 0
     confirmed = 0
+    covers_found = 0
 
     found_paths = []
 
@@ -337,9 +338,17 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         existing = await cursor.fetchone()
 
         if existing:
-            # Книга существует - подтверждаем наличие (is_available=1, last_seen)
+            # Книга существует - подтверждаем наличие (is_available=1, last_seen, cover_ext)
             book_id = existing[0]
-            await confirm_book_presence(db, book_id)
+            old_cover = await db.execute("SELECT cover_ext FROM books WHERE id = ?", (book_id,))
+            old_cover_ext = await old_cover.fetchone()
+            await confirm_book_presence(db, book_id, book.get("file_path"))
+            
+            new_cover = await db.execute("SELECT cover_ext FROM books WHERE id = ?", (book_id,))
+            new_cover_ext = await new_cover.fetchone()
+            if old_cover_ext and not old_cover_ext[0] and new_cover_ext and new_cover_ext[0]:
+                covers_found += 1
+            
             confirmed += 1
             print(f"  + Confirmed: {book.get('title', 'Unknown')}")
         else:
@@ -376,13 +385,14 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     missing = len(missing_books)
 
     await db.close()
-    print(f"\nImport complete: {imported} new, {confirmed} confirmed, {missing} missing")
+    print(f"\nImport complete: {imported} new, {confirmed} confirmed, {covers_found} covers found, {missing} missing")
 
     return {
         "source_id": source_id,
         "scanned": scanned,
         "imported": imported,
         "confirmed": confirmed,
+        "covers_found": covers_found,
         "missing": missing,
         "missing_books": missing_books,
     }

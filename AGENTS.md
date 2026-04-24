@@ -58,7 +58,7 @@ H:\Work.Py\HomeLibrary\
 - SQLite with FTS5 virtual table for full-text search
 - Triggers auto-update FTS index on INSERT/UPDATE/DELETE to `books`
 - `books` table: unique index on `source_id + relative_path` (no duplicates)
-- New fields: `cover_ext` (обложка: jpg/png/gif/webp/bmp/tiff), `is_available`, `is_new_arrival`, `last_seen`
+- New fields: `cover_ext` (обложка: jpg/png/gif/webp/bmp/tiff), `is_available`, `is_new_arrival`, `last_seen`, `format`
 
 ## Storage Sources
 
@@ -105,9 +105,10 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/stats` | GET | Library statistics |
 | `/api/sources` | GET/POST | List/add storage sources |
 | `/api/sources/{id}` | GET/PUT/DELETE | Source CRUD |
-| `/api/sources/{id}/scan` | POST | Scan source (returns: scanned, imported, confirmed, missing, missing_books) |
+| `/api/sources/{id}/scan` | POST | Scan source (returns: scanned, imported, confirmed, covers_found, missing, missing_books) |
 | `/api/sources/{id}/books` | GET | Books in source |
 | `/api/sources/discover` | GET | Auto-detect Windows drives |
+| `/api/books/{id}/open` | POST | Open book file |
 | `/api/setup/status` | GET | Setup status |
 | `/api/setup/drives` | GET | Available drives |
 | `/api/setup/select-folder` | POST | Open folder browser dialog |
@@ -115,6 +116,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/setup/scan` | POST | Initial scan |
 | `/api/setup/skip` | POST | Skip setup |
 | `/api/setup/initialize` | POST | Reset library (delete all) |
+| `/api/cover?path=...` | GET | Serve cover image (proxy) |
 
 ## Search
 
@@ -156,3 +158,7 @@ COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 - **Экспорт метаданных** - при редактировании книги метаданные экспортируются в .json
 - **Перемещение файлов** - при изменении пути перемещаются все файлы книги (.pdf + .json + .txt + обложка)
 - **Расширенные форматы обложек** - bmp, webp, tiff
+- **Обложки книг** - автоматическое обнаружение при сканировании, отображение по клику
+- **Прокси обложек** - `/api/cover?path=...` для безопасной загрузки изображений
+- **Три вкладки интерфейса**: Каталог, Хранилища, Инструменты
+- **Расширенное редактирование книги**: publisher, pages, format, language

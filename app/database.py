@@ -87,6 +87,7 @@ async def init_db():
             pass
         try:
             await db.execute("ALTER TABLE books ADD COLUMN cover_ext TEXT DEFAULT ''")
+            await db.execute("ALTER TABLE books ADD COLUMN format TEXT DEFAULT ''")
             await db.commit()
         except:
             pass
@@ -375,6 +376,7 @@ async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
             publisher = COALESCE(?, publisher),
             year = COALESCE(?, year),
             pages = COALESCE(?, pages),
+            format = COALESCE(?, format),
             description = ?,
             category_id = COALESCE(?, category_id),
             language = COALESCE(?, language)
@@ -387,6 +389,7 @@ async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
                 book_data.get("publisher"),
                 book_data.get("year"),
                 book_data.get("pages"),
+                book_data.get("format"),
                 desc_value,
                 book_data.get("category_id"),
                 book_data.get("language"),
@@ -403,6 +406,7 @@ async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
             publisher = COALESCE(?, publisher),
             year = COALESCE(?, year),
             pages = COALESCE(?, pages),
+            format = COALESCE(?, format),
             category_id = COALESCE(?, category_id),
             language = COALESCE(?, language)
         WHERE id = ?
@@ -414,6 +418,7 @@ async def update_book(db: aiosqlite.Connection, book_id: int, book_data: dict):
                 book_data.get("publisher"),
                 book_data.get("year"),
                 book_data.get("pages"),
+                book_data.get("format"),
                 book_data.get("category_id"),
                 book_data.get("language"),
                 book_id,
@@ -789,18 +794,38 @@ async def get_books_by_source_all(db: aiosqlite.Connection, source_id: int):
     return books
 
 
-async def confirm_book_presence(db: aiosqlite.Connection, book_id: int):
+async def confirm_book_presence(db: aiosqlite.Connection, book_id: int, filepath: str = None):
     """Подтверждение наличия книги при сканировании.
 
     Обновляет:
     - is_available = 1 (книга в наличии)
     - last_seen = CURRENT_TIMESTAMP (время последнего подтверждения)
+    - cover_ext (если найдена обложка и ранее не была установлена)
     Флаг is_new_arrival НЕ сбрасывается (сбрасывается через 7 дней)
     """
-    await db.execute(
-        "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
-        (book_id,),
-    )
+    from services.importer import find_cover_file
+    
+    if filepath:
+        cover_file, cover_ext = find_cover_file(filepath)
+        if cover_ext:
+            await db.execute(
+                "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP, cover_ext = ? WHERE id = ? AND (cover_ext = '' OR cover_ext IS NULL)",
+                (cover_ext, book_id),
+            )
+            await db.execute(
+                "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+                (book_id,),
+            )
+        else:
+            await db.execute(
+                "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+                (book_id,),
+            )
+    else:
+        await db.execute(
+            "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
+            (book_id,),
+        )
     await db.commit()
 
 

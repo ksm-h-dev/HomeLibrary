@@ -34,6 +34,7 @@ class BookUpdate(BaseModel):
     publisher: Optional[str] = None
     year: Optional[int] = None
     pages: Optional[int] = None
+    format: Optional[str] = None
     description: Optional[str] = None
     category_id: Optional[int] = None
     language: Optional[str] = None

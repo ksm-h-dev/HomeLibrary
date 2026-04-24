@@ -115,8 +115,9 @@
         
         .add-source-section { background: white; border-radius: 8px; padding: 20px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
         .add-source-section h3 { margin-bottom: 15px; color: #2c3e50; }
-        .add-source-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .add-source-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
         .add-source-form input, .add-source-form select { padding: 10px; border: 1px solid #ddd; border-radius: 4px; }
+        .add-source-form input[type="text"]:first-child { flex: 1; min-width: 200px; }
         .add-source-form button { padding: 10px 24px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
         .add-source-form button:hover { background: #219a52; }
         
@@ -144,6 +145,8 @@
         .cover-modal.active { display: flex; justify-content: center; align-items: center; }
         .cover-modal img { max-width: 80%; max-height: 80%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
         .cover-modal .close-btn { position: absolute; top: 20px; right: 20px; background: white; color: #333; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; }
+        
+        .tools-section { margin-bottom: 20px; }
     </style>
 </head>
 <body>
@@ -151,6 +154,50 @@
         <button class="close-btn" onclick="closeCoverModal()">X</button>
         <img id="coverModalImg" src="" alt="Обложка книги">
     </div>
+    
+    <!-- Settings Modal - Доступно из вкладки Инструменты -->
+    <div id="settingsModal" class="modal-overlay">
+        <div class="modal">
+            <h2>Настройки</h2>
+            <div class="settings-section">
+                <label>Текущий путь к библиотеке:</label>
+                <p id="currentLibraryPath" class="settings-path-display">Загрузка...</p>
+            </div>
+            <button class="settings-btn-action" onclick="changeLibraryPath()">Изменить папку</button>
+            <hr class="settings-divider">
+            <div class="settings-section">
+                <label>Инициализация библиотеки:</label>
+                <p style="color:#999;font-size:13px;margin-top:5px;">Полный сброс базы данных. Все данные о книгах и хранилищах будут удалены.</p>
+            </div>
+            <button class="settings-btn-danger" onclick="openInitLibraryModal()">Инициализировать библиотеку</button>
+            <div class="buttons" style="margin-top:20px;">
+                <button class="cancel-btn" onclick="closeSettings()">Закрыть</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Init Library Modal -->
+    <div id="initLibraryModal" class="modal-overlay">
+        <div class="modal">
+            <h2 style="color:#e74c3c;">Внимание!</h2>
+            <p>Вы собираетесь <strong>полностью инициализировать библиотеку</strong>.</p>
+            <p style="color:#c0392b;font-weight:bold;margin:15px 0;background:#ffeaa7;padding:10px;border-radius:4px;">
+                Все данные о книгах и хранилищах будут безвозвратно удалены!
+            </p>
+            <p>После инициализации потребуется:</p>
+            <ul style="margin:10px 0 15px 20px;color:#666;">
+                <li>Повторно добавить все хранилища</li>
+                <li>Повторно просканировать все диски</li>
+                <li>Потеряны все настройки каталога</li>
+            </ul>
+            <p style="font-size:12px;color:#999;margin-bottom:15px;">Это действие нельзя отменить.</p>
+            <div class="buttons">
+                <button class="cancel-btn" onclick="closeInitLibraryModal()">Отмена</button>
+                <button class="save-btn" style="background:#e74c3c;" onclick="confirmInitLibrary()">Да, инициализировать</button>
+            </div>
+        </div>
+    </div>
+    
     <div id="editModal" class="modal-overlay">
         <div class="modal">
             <h2>Редактирование книги</h2>
@@ -169,6 +216,22 @@
             <div class="form-group">
                 <label>Год издания</label>
                 <input type="number" id="editYear">
+            </div>
+            <div class="form-group">
+                <label>Издательство</label>
+                <input type="text" id="editPublisher">
+            </div>
+            <div class="form-group">
+                <label>Страниц</label>
+                <input type="number" id="editPages">
+            </div>
+            <div class="form-group">
+                <label>Формат</label>
+                <input type="text" id="editFormat">
+            </div>
+            <div class="form-group">
+                <label>Язык</label>
+                <input type="text" id="editLanguage">
             </div>
             <div class="form-group">
                 <label>Категория</label>
@@ -235,136 +298,107 @@
         <div class="nav-tabs">
             <button class="active" onclick="showTab('books')">Каталог</button>
             <button onclick="showTab('sources')">Хранилища</button>
+            <button onclick="showTab('tools')">Инструменты</button>
         </div>
         
-        <div id="tab-books" class="tab-content active">
-            <div class="stats" id="stats">
-                <div class="stat-card"><div class="value" id="totalBooks">-</div><div class="label">Книг</div></div>
-                <div class="stat-card"><div class="value" id="totalCategories">-</div><div class="label">Категорий</div></div>
-                <div class="stat-card"><div class="value" id="totalSources">-</div><div class="label">Хранилищ</div></div>
-            </div>
-            
-            <div class="search-box">
-                <select id="actionFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;">
-                    <option value="search">Поиск</option>
-                    <option value="filter">Фильтр</option>
-                    <option value="sort">Сортировка</option>
-                    <option value="reset">Сброс</option>
-                </select>
-                <input type="text" id="searchInput" placeholder="Поиск по названию, автору, описанию...">
-                <button id="actionBtn" onclick="executeAction()">Выполнить</button>
-            </div>
-            
-            <div class="filters">
-                <select id="formatFilter">
-                    <option value="">Все форматы</option>
-                    <option value="pdf">PDF</option>
-                    <option value="djvu">DJVU</option>
-                    <option value="rar">RAR</option>
-                    <option value="zip">ZIP</option>
-                </select>
-                <select id="categoryFilter">
-                    <option value="">Все категории</option>
-                </select>
-                <select id="yearFilter">
-                    <option value="">Любой год</option>
-                </select>
-                <select id="sourceFilter">
-                    <option value="">Все хранилища</option>
-                </select>
-                <select id="sortFilter">
-                    <option value="date">Дата</option>
-                    <option value="title">Название</option>
-                    <option value="author">Автор</option>
-                    <option value="year">Год</option>
-                    <option value="pages">Страниц</option>
-                </select>
-                <select id="availabilityFilter">
-                    <option value="">Все книги</option>
-                    <option value="available">В наличии</option>
-                    <option value="missing">Отсутствуют</option>
-                    <option value="new">Новые поступления</option>
-                </select>
-            </div>
-            
-            <div id="booksContainer" class="books-grid"></div>
-            <div id="loading" class="loading" style="display:none">Загрузка...</div>
-            <div id="noResults" class="no-results" style="display:none">Ничего не найдено</div>
-            
-            <div class="pagination" id="pagination"></div>
-        </div>
-        
-        <div id="tab-sources" class="tab-content">
-            <h2 class="section-title">Управление хранилищами</h2>
-            
-            <button class="settings-btn" onclick="openSettings()">⚙️ Настройки</button>
-            <div id="settingsModal" class="modal-overlay">
-                <div class="modal">
-                    <h2>Настройки</h2>
-                    <div class="settings-section">
-                        <label>Текущий путь к библиотеке:</label>
-                        <p id="currentLibraryPath" class="settings-path-display">Загрузка...</p>
+        <div id="main-content">
+            <div class="tab-wrapper">
+                <div id="tab-books" class="tab-content active">
+                    <div class="stats" id="stats">
+                        <div class="stat-card"><div class="value" id="totalBooks">-</div><div class="label">Книг</div></div>
+                        <div class="stat-card"><div class="value" id="totalCategories">-</div><div class="label">Категорий</div></div>
+                        <div class="stat-card"><div class="value" id="totalSources">-</div><div class="label">Хранилищ</div></div>
                     </div>
-                    <button class="settings-btn-action" onclick="changeLibraryPath()">Изменить папку</button>
-                    <hr class="settings-divider">
-                    <div class="settings-section">
-                        <label>Инициализация библиотеки:</label>
-                        <p style="color:#999;font-size:13px;margin-top:5px;">Полный сброс базы данных. Все данные о книгах и хранилищах будут удалены.</p>
+                    
+                    <div class="search-box">
+                        <select id="actionFilter" style="padding:8px 12px;border:1px solid #ddd;border-radius:4px;">
+                            <option value="search">Поиск</option>
+                            <option value="filter">Фильтр</option>
+                            <option value="sort">Сортировка</option>
+                            <option value="reset">Сброс</option>
+                        </select>
+                        <input type="text" id="searchInput" placeholder="Поиск по названию, автору, описанию...">
+                        <button id="actionBtn" onclick="executeAction()">Выполнить</button>
                     </div>
-                    <button class="settings-btn-danger" onclick="openInitLibraryModal()">Инициализировать библиотеку</button>
-                    <div class="buttons" style="margin-top:20px;">
-                        <button class="cancel-btn" onclick="closeSettings()">Закрыть</button>
+                    
+                    <div class="filters">
+                        <select id="formatFilter">
+                            <option value="">Все форматы</option>
+                            <option value="pdf">PDF</option>
+                            <option value="djvu">DJVU</option>
+                            <option value="rar">RAR</option>
+                            <option value="zip">ZIP</option>
+                        </select>
+                        <select id="categoryFilter">
+                            <option value="">Все категории</option>
+                        </select>
+                        <select id="yearFilter">
+                            <option value="">Любой год</option>
+                        </select>
+                        <select id="sourceFilter">
+                            <option value="">Все хранилища</option>
+                        </select>
+                        <select id="sortFilter">
+                            <option value="date">Дата</option>
+                            <option value="title">Название</option>
+                            <option value="author">Автор</option>
+                            <option value="year">Год</option>
+                            <option value="pages">Страниц</option>
+                        </select>
+                        <select id="availabilityFilter">
+                            <option value="">Все книги</option>
+                            <option value="available">В наличии</option>
+                            <option value="missing">Отсутствуют</option>
+                            <option value="new">Новые поступления</option>
+                        </select>
                     </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Modal для инициализации библиотеки -->
-        <div id="initLibraryModal" class="modal-overlay">
-            <div class="modal">
-                <h2 style="color:#e74c3c;">Внимание!</h2>
-                <p>Вы собираетесь <strong>полностью инициализировать библиотеку</strong>.</p>
-                <p style="color:#c0392b;font-weight:bold;margin:15px 0;background:#ffeaa7;padding:10px;border-radius:4px;">
-                    Все данные о книгах и хранилищах будут безвозвратно удалены!
-                </p>
-                <p>После инициализации потребуется:</p>
-                <ul style="margin:10px 0 15px 20px;color:#666;">
-                    <li>Повторно добавить все хранилища</li>
-                    <li>Повторно просканировать все диски</li>
-                    <li>Потеряны все настройки каталога</li>
-                </ul>
-                <p style="font-size:12px;color:#999;margin-bottom:15px;">Это действие нельзя отменить.</p>
-                <div class="buttons">
-                    <button class="cancel-btn" onclick="closeInitLibraryModal()">Отмена</button>
-                    <button class="save-btn" style="background:#e74c3c;" onclick="confirmInitLibrary()">Да, инициализировать</button>
-                </div>
-            </div>
-        </div>
-            
-            <div class="add-source-section">
-                <h3>Добавить хранилище</h3>
-                <div class="add-source-form">
-                    <input type="text" id="sourceName" placeholder="Название (например: DVD Коллекция)">
-                    <select id="sourceType">
-                        <option value="local">Локальный диск</option>
-                        <option value="hdd">Внешний HDD</option>
-                        <option value="ssd">Внешний SSD</option>
-                        <option value="dvd">DVD/BD диск</option>
-                        <option value="nas">NAS хранилище</option>
-                        <option value="network">Сетевая папка</option>
-                    </select>
-                    <input type="text" id="sourcePath" placeholder="Путь (например: D:\Books\)">
-                    <button onclick="addSource()">Добавить</button>
-                </div>
-                
-                <div class="discovered-drives">
-                    <h4>Подключенные диски</h4>
-                    <div id="discoveredDrives"></div>
+                    
+                    <div id="booksContainer" class="books-grid"></div>
+                    <div id="loading" class="loading" style="display:none">Загрузка...</div>
+                    <div id="noResults" class="no-results" style="display:none">Ничего не найдено</div>
+                    
+                    <div class="pagination" id="pagination"></div>
                 </div>
             </div>
             
-            <h3 class="section-title">Список хранилищ</h3>
-            <div id="sourcesList" class="sources-list"></div>
+            <div class="tab-wrapper">
+                <div id="tab-sources" class="tab-content">
+                    <h2 class="section-title">Управление хранилищами</h2>
+                    
+                    <div class="add-source-section">
+                        <h3>Добавить хранилище</h3>
+                        <div class="add-source-form">
+                            <input type="text" id="sourceName" placeholder="Название (например: DVD Коллекция)">
+                            <select id="sourceType">
+                                <option value="local">Локальный диск</option>
+                                <option value="hdd">Внешний HDD</option>
+                                <option value="ssd">Внешний SSD</option>
+                                <option value="dvd">DVD/BD диск</option>
+                                <option value="nas">NAS хранилище</option>
+                                <option value="network">Сетевая папка</option>
+                            </select>
+                            <div style="display:flex;gap:5px;flex:1;">
+                                <input type="text" id="sourcePath" placeholder="Путь (например: D:\Books\)" style="flex:1;">
+                                <button onclick="selectSourceFolder()" title="Выбрать папку">📁</button>
+                            </div>
+                            <button onclick="addSource()">Добавить</button>
+                        </div>
+                    </div>
+                    
+                    <h3 class="section-title">Список хранилищ</h3>
+                    <div id="sourcesList" class="sources-list"></div>
+                </div>
+            </div>
+            
+            <div class="tab-wrapper">
+                <div id="tab-tools" class="tab-content">
+                    <h2 class="section-title">Инструменты</h2>
+                    
+                    <div class="tools-section">
+                        <button class="settings-btn-action" onclick="openSettings()">⚙️ Настройки</button>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -383,7 +417,6 @@
             
             if (tab === 'sources') {
                 loadSources();
-                discoverDrives();
             }
         }
         
@@ -479,7 +512,7 @@
                         const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
                         const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                         card.innerHTML = `
-                            <h3>${book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext)) + '\')" title="Показать обложку">&#128247;</span>' : ''}${escapeHtml(book.title || 'Без названия')}</h3>
+                            <h3>${book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs('/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext))) + '\')" title="Показать обложку">&#128247;</span>' : ''}${escapeHtml(book.title || 'Без названия')}</h3>
                             <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
                             ${book.isbn ? `<div class="isbn">ISBN: ${escapeHtml(book.isbn)}</div>` : ''}
                             <div class="meta">
@@ -569,7 +602,7 @@
                         const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                         let title = book.title_hl || book.title || 'Без названия';
                         card.innerHTML = `
-                            <h3>${book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext) : '') + '\')" title="Показать обложку">&#128247;</span>' : ''}${title}</h3>
+                            <h3>${book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? '/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext)) : '') + '\')" title="Показать обложку">&#128247;</span>' : ''}${title}</h3>
                             <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
                             ${book.isbn ? `<div class="isbn">ISBN: ${escapeHtml(book.isbn)}</div>` : ''}
                             <div class="meta">
@@ -683,7 +716,7 @@
                         const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
                         const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
                     let title = book.title_hl || book.title || 'Без названия';
-                    title = (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext) : '') + '\')" title="Показать обложку">&#128247;</span>' : '') + title;
+                    title = (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? '/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\\.[^.]+$/, '.' + book.cover_ext)) : '') + '\')" title="Показать обложку">&#128247;</span>' : '') + title;
                     card.innerHTML = `
                         <h3>${title}</h3>
                         <div class="author">${escapeHtml(book.author || 'Автор неизвестен')}</div>
@@ -780,6 +813,30 @@
             } catch (e) { 
                 console.error(e);
                 document.getElementById('discoveredDrives').innerHTML = '<p style="color:#999;">Не удалось обнаружить диски</p>';
+            }
+        }
+        
+        async function selectSourceFolder() {
+            try {
+                const res = await fetch('/api/setup/select-folder', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                
+                if (data.success && data.selected_path) {
+                    document.getElementById('sourcePath').value = data.selected_path;
+                    // Auto-fill name from folder name if empty
+                    const nameInput = document.getElementById('sourceName');
+                    if (!nameInput.value.trim()) {
+                        const folderName = data.selected_path.split('\\').filter(x => x).pop();
+                        if (folderName) nameInput.value = folderName;
+                    }
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка выбора папки');
             }
         }
         
@@ -935,6 +992,10 @@
                 document.getElementById('editAuthor').value = book.author || '';
                 document.getElementById('editIsbn').value = book.isbn || '';
                 document.getElementById('editYear').value = book.year || '';
+                document.getElementById('editPublisher').value = book.publisher || '';
+                document.getElementById('editPages').value = book.pages || '';
+                document.getElementById('editFormat').value = book.format || '';
+                document.getElementById('editLanguage').value = book.language || '';
                 document.getElementById('editDescription').value = book.description || '';
                 
                 await loadCategoriesForEdit(book.category_id);
@@ -979,6 +1040,10 @@
                 author: document.getElementById('editAuthor').value,
                 isbn: document.getElementById('editIsbn').value || null,
                 year: document.getElementById('editYear').value ? parseInt(document.getElementById('editYear').value) : null,
+                publisher: document.getElementById('editPublisher').value || null,
+                pages: document.getElementById('editPages').value ? parseInt(document.getElementById('editPages').value) : null,
+                format: document.getElementById('editFormat').value || null,
+                language: document.getElementById('editLanguage').value || null,
                 description: document.getElementById('editDescription').value,
                 category_id: document.getElementById('editCategory').value ? parseInt(document.getElementById('editCategory').value) : null
             };
