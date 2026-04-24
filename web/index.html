@@ -60,8 +60,8 @@
         .book-card { position: relative; }
         
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; }
-        .modal-overlay.active { display: block; }
-        .modal { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+        .modal-overlay.active { display: flex; align-items: center; justify-content: center; }
+        .modal { display: none; background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
         .modal-overlay.active .modal { display: block; }
         .modal h2 { margin-top: 0; color: #2c3e50; }
         .modal .form-group { margin-bottom: 15px; }
@@ -72,6 +72,9 @@
         .modal .buttons button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
         .modal .buttons .save-btn { background: #27ae60; color: white; }
         .modal .buttons .cancel-btn { background: #95a5a6; color: white; }
+        
+        .modal .form-group .transfer-info { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
+        .modal .form-group .transfer-info p { margin: 5px 0; font-size: 13px; }
         
         .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 30px; }
         .pagination button { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
@@ -146,7 +149,44 @@
         .cover-modal img { max-width: 80%; max-height: 80%; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
         .cover-modal .close-btn { position: absolute; top: 20px; right: 20px; background: white; color: #333; border: none; border-radius: 50%; width: 40px; height: 40px; font-size: 20px; cursor: pointer; }
         
-        .tools-section { margin-bottom: 20px; }
+        .tools-section { margin-bottom: 20px; display: flex; flex-direction: column; gap: 15px; }
+        
+        .tools-tiles { display: flex; gap: 10px; }
+        
+        .tools-tile {
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 120px;
+            height: 120px;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .tools-tile:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .tools-tile .tile-icon {
+            width: 64px;
+            height: 64px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .tools-tile .tile-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        .tools-tile .tile-label {
+            font-size: 12px;
+            color: #333;
+            margin-top: 8px;
+        }
     </style>
 </head>
 <body>
@@ -286,6 +326,36 @@
             </div>
         </div>
     </div>
+
+    <!-- Transfer Modal -->
+    <div id="transferModal" class="modal-overlay">
+        <div class="modal">
+            <h2>Перенос хранилища</h2>
+            <div class="form-group">
+                <label>Исходное хранилище:</label>
+                <select id="transferSourceSelect" onchange="loadTransferInfo()">
+                    <option value="">-- Выберите хранилище --</option>
+                </select>
+            </div>
+            <div id="transferInfo" class="transfer-info" style="display: none;">
+                <p>Путь: <span id="transferSourcePath"></span></p>
+                <p>Книг: <span id="transferBookCount"></span></p>
+                <p>Размер: <span id="transferSize"></span></p>
+            </div>
+            <div class="form-group">
+                <label>Новое место:</label>
+                <div style="display: flex; gap: 10px;">
+                    <input type="text" id="transferTargetPath" placeholder="Выберите папку..." readonly>
+                    <button onclick="selectTransferFolder()">Обзор</button>
+                </div>
+            </div>
+            <div class="buttons">
+                <button class="save-btn" onclick="startTransfer()">Перенести</button>
+                <button class="cancel-btn" onclick="closeTransferModal()">Отмена</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <header>
             <div>
@@ -396,6 +466,22 @@
                     
                     <div class="tools-section">
                         <button class="settings-btn-action" onclick="openSettings()">⚙️ Настройки</button>
+                        
+                        <div class="tools-tiles">
+                            <div class="tools-tile" onclick="cleanupDatabase()" title="Удалить недоступные книги">
+                                <div class="tile-icon">
+                                    <img src="cleanup.png" alt="Очистка">
+                                </div>
+                                <div class="tile-label">Очистка базы</div>
+                            </div>
+                            
+                            <div class="tools-tile" onclick="openTransferModal()" title="Перенос хранилища">
+                                <div class="tile-icon">
+                                    <img src="transfer.png" alt="Перенос">
+                                </div>
+                                <div class="tile-label">Перенос хранилища</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -447,8 +533,8 @@
                 const catSelect = document.getElementById('categoryFilter');
                 data.forEach(cat => {
                     const opt = document.createElement('option');
-                    opt.value = cat.name;
-                    opt.textContent = cat.name;
+                    opt.value = cat.full_path;
+                    opt.textContent = cat.full_path;
                     catSelect.appendChild(opt);
                 });
             } catch (e) { console.error(e); }
@@ -1011,14 +1097,14 @@
         
         async function loadCategoriesForEdit(selectedId) {
             try {
-                const res = await fetch('/api/books/categories');
+                const res = await fetch('/api/categories');
                 const categories = await res.json();
                 const select = document.getElementById('editCategory');
                 select.innerHTML = '<option value="">— Без категории —</option>';
                 categories.forEach(cat => {
                     const opt = document.createElement('option');
                     opt.value = cat.id;
-                    opt.textContent = cat.name;
+                    opt.textContent = cat.full_path;
                     if (cat.id === selectedId) opt.selected = true;
                     select.appendChild(opt);
                 });
@@ -1030,6 +1116,21 @@
         function closeModal() {
             document.getElementById('editModal').classList.remove('active');
             editingBookId = null;
+        }
+        
+        async function cleanupDatabase() {
+            if (!confirm('Удалить все недоступные книги из базы данных?')) return;
+            
+            try {
+                const res = await fetch('/api/books/cleanup', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message);
+                loadBooks();
+                loadStats();
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка при очистке');
+            }
         }
         
         async function saveBook() {
@@ -1198,6 +1299,92 @@
         function closeCoverModal() {
             document.getElementById('coverModal').classList.remove('active');
             document.getElementById('coverModalImg').src = '';
+        }
+        
+        async function openTransferModal() {
+            document.getElementById('transferModal').classList.add('active');
+            document.getElementById('transferSourceSelect').innerHTML = '<option value="">-- Выберите хранилище --</option>';
+            document.getElementById('transferInfo').style.display = 'none';
+            document.getElementById('transferTargetPath').value = '';
+            
+            // Load sources
+            try {
+                const res = await fetch('/api/sources');
+                const sources = await res.json();
+                const select = document.getElementById('transferSourceSelect');
+                sources.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name + ' (' + s.path + ')';
+                    select.appendChild(opt);
+                });
+            } catch (e) { console.error(e); }
+        }
+        
+        function closeTransferModal() {
+            document.getElementById('transferModal').classList.remove('active');
+        }
+        
+        async function loadTransferInfo() {
+            const sourceId = document.getElementById('transferSourceSelect').value;
+            if (!sourceId) {
+                document.getElementById('transferInfo').style.display = 'none';
+                return;
+            }
+            
+            try {
+                const res = await fetch('/api/sources/' + sourceId + '/transfer-info');
+                const info = await res.json();
+                document.getElementById('transferSourcePath').textContent = info.path;
+                document.getElementById('transferBookCount').textContent = info.book_count;
+                document.getElementById('transferSize').textContent = (info.total_size / 1024 / 1024).toFixed(2) + ' MB';
+                document.getElementById('transferInfo').style.display = 'block';
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        async function selectTransferFolder() {
+            // Use PowerShellFolderBrowserDialog via API
+            try {
+                const res = await fetch('/api/setup/select-folder', { method: 'POST' });
+                const data = await res.json();
+                if (data.path) {
+                    document.getElementById('transferTargetPath').value = data.path;
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        
+        async function startTransfer() {
+            const sourceId = document.getElementById('transferSourceSelect').value;
+            const targetPath = document.getElementById('transferTargetPath').value;
+            
+            if (!sourceId || !targetPath) {
+                alert('Выберите хранилище и место переноса');
+                return;
+            }
+            
+            if (!confirm('Начать перенос хранилища?')) return;
+            
+            try {
+                const res = await fetch('/api/sources/' + sourceId + '/transfer?target_path=' + encodeURIComponent(targetPath), {
+                    method: 'POST'
+                });
+                const data = await res.json();
+                
+                if (data.success) {
+                    alert(data.message);
+                    closeTransferModal();
+                    loadSources();
+                } else {
+                    alert('Ошибка: ' + data.message);
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка при переносе');
+            }
         }
         
         async function checkSetup() {

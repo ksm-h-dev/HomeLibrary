@@ -13,6 +13,8 @@ from app.database import (
     update_source_scan_time,
     get_books_by_source,
     check_source_availability,
+    get_source_transfer_info,
+    transfer_source,
 )
 from app.models import (
     SourceCreate,
@@ -150,3 +152,28 @@ async def scan_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)
         "missing": result.get("missing", 0),
         "missing_books": result.get("missing_books", []),
     }
+
+
+@router.get("/{source_id}/transfer-info")
+async def get_transfer_info(source_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """Возвращает информацию о хранилище для переноса."""
+    info = await get_source_transfer_info(db, source_id)
+    if not info:
+        raise HTTPException(status_code=404, detail="Source not found")
+    return info
+
+
+@router.post("/{source_id}/transfer")
+async def transfer_source(
+    source_id: int,
+    target_path: str,
+    target_source_id: Optional[int] = None,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Переносит хранилище в новое место."""
+    result = await transfer_source(
+        db, source_id, target_path, target_source_id, conflict_callback=None
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=400, detail=result.get("message"))
+    return result

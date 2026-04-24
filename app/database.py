@@ -62,6 +62,17 @@ async def init_db():
                 FOREIGN KEY (category_id) REFERENCES categories(id),
                 FOREIGN KEY (source_id) REFERENCES sources(id)
             );
+
+            CREATE VIEW IF NOT EXISTS category_paths AS
+            WITH RECURSIVE cat_path AS (
+                SELECT id, name, parent_id, name as full_path
+                FROM categories WHERE parent_id IS NULL
+                UNION ALL
+                SELECT c.id, c.name, c.parent_id, cat_path.full_path || '/' || c.name
+                FROM categories c
+                INNER JOIN cat_path ON c.parent_id = cat_path.id
+            )
+            SELECT id, name, parent_id, full_path FROM cat_path;
         """)
         try:
             await db.execute(
@@ -88,6 +99,11 @@ async def init_db():
         try:
             await db.execute("ALTER TABLE books ADD COLUMN cover_ext TEXT DEFAULT ''")
             await db.execute("ALTER TABLE books ADD COLUMN format TEXT DEFAULT ''")
+            await db.commit()
+        except:
+            pass
+        try:
+            await db.execute("ALTER TABLE sources ADD COLUMN total_size INTEGER DEFAULT 0")
             await db.commit()
         except:
             pass
@@ -122,15 +138,15 @@ async def get_all_books(
     - "new": is_new_arrival=1 (новые поступления, сортировка по last_seen DESC)
     """
     query = """
-        SELECT b.*, c.name as category_name, s.name as source_name
+        SELECT b.*, c.full_path as category_name, s.name as source_name
         FROM books b
-        LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN category_paths c ON b.category_id = c.id
         LEFT JOIN sources s ON b.source_id = s.id
     """
     params = []
     conditions = []
     if category:
-        conditions.append("c.name = ?")
+        conditions.append("c.full_path = ?")
         params.append(category)
     if format:
         conditions.append("b.format = ?")
@@ -174,7 +190,7 @@ async def get_all_books(
     count_params.pop()
     count_params.pop()
     cursor = await db.execute(
-        "SELECT COUNT(*) FROM books b LEFT JOIN categories c ON b.category_id = c.id LEFT JOIN sources s ON b.source_id = s.id"
+        "SELECT COUNT(*) FROM books b LEFT JOIN category_paths c ON b.category_id = c.id LEFT JOIN sources s ON b.source_id = s.id"
         + (" WHERE " + " AND ".join(conditions) if conditions else ""),
         count_params,
     )
@@ -204,12 +220,12 @@ async def search_books(
     - "new": новые поступления (is_new_arrival=1), сортировка по last_seen DESC
     """
     sql = """
-        SELECT b.*, c.name as category_name, s.name as source_name,
+        SELECT b.*, c.full_path as category_name, s.name as source_name,
                b.title as title_hl,
                substr(b.description, 1, 150) as desc_snippet
         FROM books_fts
         JOIN books b ON books_fts.rowid = b.id
-        LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN category_paths c ON b.category_id = c.id
         LEFT JOIN sources s ON b.source_id = s.id
         WHERE books_fts MATCH ?
     """
@@ -220,7 +236,7 @@ async def search_books(
         sql += " AND b.format = ?"
         params.append(format)
     if category:
-        sql += " AND c.name = ?"
+        sql += " AND c.full_path = ?"
         params.append(category)
     if year:
         sql += " AND b.year = ?"
@@ -255,7 +271,7 @@ async def search_books(
     count_sql = """
         SELECT COUNT(*) FROM books_fts
         JOIN books b ON books_fts.rowid = b.id
-        LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN category_paths c ON b.category_id = c.id
         LEFT JOIN sources s ON b.source_id = s.id
         WHERE books_fts MATCH ?
     """
@@ -264,7 +280,7 @@ async def search_books(
         count_sql += " AND b.format = ?"
         count_params.append(format)
     if category:
-        count_sql += " AND c.name = ?"
+        count_sql += " AND c.full_path = ?"
         count_params.append(category)
     if year:
         count_sql += " AND b.year = ?"
@@ -288,9 +304,9 @@ async def search_books(
 async def get_book_by_id(db: aiosqlite.Connection, book_id: int):
     cursor = await db.execute(
         """
-        SELECT b.*, c.name as category_name, s.name as source_name
+        SELECT b.*, c.full_path as category_name, s.name as source_name
         FROM books b
-        LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN category_paths c ON b.category_id = c.id
         LEFT JOIN sources s ON b.source_id = s.id
         WHERE b.id = ?
     """,
@@ -309,7 +325,17 @@ async def get_book_by_id(db: aiosqlite.Connection, book_id: int):
 
 
 async def get_categories(db: aiosqlite.Connection):
-    cursor = await db.execute("SELECT * FROM categories ORDER BY name")
+    cursor = await db.execute("""
+        WITH RECURSIVE cat_path AS (
+            SELECT id, name, parent_id, name as full_path
+            FROM categories WHERE parent_id IS NULL
+            UNION ALL
+            SELECT c.id, c.name, c.parent_id, cat_path.full_path || '/' || c.name
+            FROM categories c
+            INNER JOIN cat_path ON c.parent_id = cat_path.id
+        )
+        SELECT id, name, parent_id, full_path FROM cat_path ORDER BY full_path
+    """)
     rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
@@ -728,6 +754,216 @@ async def delete_source(db: aiosqlite.Connection, source_id: int):
     await db.commit()
 
 
+async def get_source_transfer_info(db: aiosqlite.Connection, source_id: int) -> dict:
+    """Возвращает информацию о хранилище для переноса."""
+    source = await get_source_by_id(db, source_id)
+    if not source:
+        return None
+    
+    # Получаем категории с количеством книг
+    cursor = await db.execute("""
+        SELECT c.id, c.name, c.full_path, COUNT(b.id) as book_count
+        FROM category_paths c
+        JOIN books b ON b.category_id = c.id
+        WHERE b.source_id = ?
+        GROUP BY c.id
+        ORDER BY c.full_path
+    """, (source_id,))
+    categories = await cursor.fetchall()
+    
+    # Получаем общее количество книг и размер
+    cursor = await db.execute(
+        "SELECT COUNT(*), COALESCE(SUM(file_size), 0) FROM books WHERE source_id = ?",
+        (source_id,)
+    )
+    row = await cursor.fetchone()
+    
+    return {
+        "id": source["id"],
+        "name": source["name"],
+        "path": source["path"],
+        "total_size": source.get("total_size", 0),
+        "book_count": row[0] if row else 0,
+        "categories": [dict(c) for c in categories],
+    }
+
+
+async def transfer_source(
+    db: aiosqlite.Connection,
+    source_id: int,
+    target_path: str,
+    target_source_id: int = None,
+    conflict_callback=None,
+) -> dict:
+    """Перенос хранилища.
+    
+    Args:
+        db: Database connection
+        source_id: ID исходного хранилища
+        target_path: Путь для переноса
+        target_source_id: ID целевого хранилища (если перенос в существующее)
+        conflict_callback: функция для обработки конфликтов (принимает путь, возвращает True/False)
+    
+    Returns:
+        dict: {success: bool, message: str, new_source_id: int, transferred_count: int}
+    """
+    import shutil
+    
+    source = await get_source_by_id(db, source_id)
+    if not source:
+        return {"success": False, "message": "Исходное хранилище не найдено"}
+    
+    source_path = source["path"]
+    if not os.path.exists(source_path):
+        return {"success": False, "message": f"Исходный путь не существует: {source_path}"}
+    
+    # Проверка свободного места
+    source_size = source.get("total_size", 0)
+    try:
+        import ctypes
+        free_bytes = ctypes.c_ulonglong(0)
+        ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+            ctypes.c_wchar_p(target_path), None, ctypes.byref(free_bytes), None
+        )
+        free_space = free_bytes.value
+    except Exception:
+        free_space = 999999999999999  # fallback
+    
+    is_new_target = target_source_id is None
+    
+    if is_new_target and source_size > free_space:
+        return {"success": False, "message": "Недостаточно места на диске"}
+    
+    # Получаем категории хранилища
+    cursor = await db.execute("""
+        SELECT DISTINCT c.id, c.name, c.full_path
+        FROM category_paths c
+        JOIN books b ON b.category_id = c.id
+        WHERE b.source_id = ?
+        ORDER BY c.full_path
+    """, (source_id,))
+    categories = await cursor.fetchall()
+    
+    # Создаём целевую директорию если нужно
+    if is_new_target:
+        os.makedirs(target_path, exist_ok=True)
+    
+    # Получаем все книги хранилища
+    cursor = await db.execute(
+        "SELECT * FROM books WHERE source_id = ?", (source_id,)
+    )
+    books = await cursor.fetchall()
+    
+    transferred = 0
+    errors = []
+    
+    for book_row in books:
+        book = dict(book_row)
+        category_path = ""
+        
+        # Находим категорию книги
+        for cat in categories:
+            if cat["id"] == book.get("category_id"):
+                category_path = cat["full_path"]
+                break
+        
+        # Формируем целевой путь
+        if is_new_target:
+            target_dir = os.path.join(target_path, category_path) if category_path else target_path
+        else:
+            target_dir = os.path.join(target_path, category_path) if category_path else target_path
+        
+        os.makedirs(target_dir, exist_ok=True)
+        
+        # Переносим файл книги
+        source_file = book.get("file_path", "")
+        if source_file and os.path.exists(source_file):
+            target_file = os.path.join(target_dir, os.path.basename(source_file))
+            
+            # Проверка конфликта
+            if os.path.exists(target_file):
+                if conflict_callback:
+                    if not conflict_callback(target_file):
+                        errors.append(f"Пропущен: {book.get('title')}")
+                        continue
+                else:
+                    errors.append(f"Конфликт: {os.path.basename(source_file)}")
+                    continue
+            
+            try:
+                shutil.copy2(source_file, target_file)
+                book["file_path"] = target_file
+                book["relative_path"] = os.path.join(category_path, os.path.basename(source_file)) if category_path else os.path.basename(source_file)
+                book["file_size"] = os.path.getsize(target_file)
+            except Exception as e:
+                errors.append(f"Ошибка {book.get('title')}: {str(e)}")
+                continue
+        
+        # Переносим обложку
+        cover_path = book.get("cover_path", "")
+        if cover_path and os.path.exists(cover_path):
+            target_cover = os.path.join(target_dir, os.path.basename(cover_path))
+            try:
+                shutil.copy2(cover_path, target_cover)
+                book["cover_path"] = target_cover
+            except:
+                pass
+        
+        # Переносим метаданные .json если есть
+        if source_file:
+            json_path = os.path.splitext(source_file)[0] + ".json"
+            if os.path.exists(json_path):
+                target_json = os.path.splitext(target_file)[0] + ".json"
+                try:
+                    shutil.copy2(json_path, target_json)
+                except:
+                    pass
+        
+        transferred += 1
+    
+    if transferred == 0:
+        return {"success": False, "message": "Не удалось перенести ни одной книги"}
+    
+    # Создаём новое хран��лище
+    new_source_id = None
+    if is_new_target:
+        cursor = await db.execute(
+            """INSERT INTO sources (name, type, path, total_size) VALUES (?, ?, ?, ?)""",
+            (source["name"], source.get("type", "local"), target_path, source_size)
+        )
+        await db.commit()
+        new_source_id = cursor.lastrowid
+        
+        # Обновляем category_id для книг
+        for book_row in books:
+            book_id = book_row["id"]
+            await db.execute(
+                "UPDATE books SET source_id = ?, is_available = 1 WHERE id = ?",
+                (new_source_id, book_id)
+            )
+        await db.commit()
+    
+    return {
+        "success": True,
+        "message": f"Перенесено {transferred} книг",
+        "new_source_id": new_source_id,
+        "transferred_count": transferred,
+        "errors": errors,
+    }
+
+
+async def cleanup_unavailable_books(db: aiosqlite.Connection) -> int:
+    """Удаляет все недоступные книги. Возвращает количество удалённых."""
+    cursor = await db.execute("SELECT COUNT(*) FROM books WHERE is_available = 0")
+    count = (await cursor.fetchone())[0]
+    
+    if count > 0:
+        await db.execute("DELETE FROM books WHERE is_available = 0")
+        await db.commit()
+    
+    return count
+
+
 async def update_source_scan_time(db: aiosqlite.Connection, source_id: int):
     await db.execute(
         "UPDATE sources SET last_scanned = CURRENT_TIMESTAMP WHERE id = ?", (source_id,)
@@ -739,10 +975,9 @@ async def get_books_by_source(
     db: aiosqlite.Connection, source_id: int, limit: int = 20, offset: int = 0
 ):
     cursor = await db.execute(
-        """
-        SELECT b.*, c.name as category_name, s.name as source_name
+        """SELECT b.*, c.full_path as category_name, s.name as source_name
         FROM books b
-        LEFT JOIN categories c ON b.category_id = c.id
+        LEFT JOIN category_paths c ON b.category_id = c.id
         LEFT JOIN sources s ON b.source_id = s.id
         WHERE b.source_id = ?
         ORDER BY b.id DESC LIMIT ? OFFSET ?

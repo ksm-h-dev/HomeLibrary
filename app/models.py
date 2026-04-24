@@ -56,6 +56,7 @@ class CategoryResponse(BaseModel):
     id: int
     name: str
     parent_id: Optional[int] = None
+    full_path: str
 
 
 class SourceType(BaseModel):

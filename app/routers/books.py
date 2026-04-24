@@ -14,6 +14,7 @@ from app.database import (
     get_categories,
     export_book_to_json,
     move_book_files,
+    cleanup_unavailable_books,
 )
 from app.models import BookResponse, BookListResponse, BookUpdate, CategoryResponse
 
@@ -109,3 +110,10 @@ async def open_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
         subprocess.run(["xdg-open", file_path])
 
     return {"success": True, "message": "File opened"}
+
+
+@router.post("/cleanup")
+async def cleanup_unavailable(db: aiosqlite.Connection = Depends(get_db)):
+    """Удаляет все недоступные книги из базы."""
+    count = await cleanup_unavailable_books(db)
+    return {"deleted": count, "message": f"Удалено {count} недоступных книг"}

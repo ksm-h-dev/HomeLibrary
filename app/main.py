@@ -119,6 +119,15 @@ async def favicon():
     return FileResponse(os.path.join(WEB_DIR, "favicon.ico"))
 
 
+@app.get("/{filename}")
+async def static_files(filename: str):
+    """Serve static files from web directory."""
+    file_path = os.path.join(WEB_DIR, filename)
+    if os.path.isfile(file_path):
+        return FileResponse(file_path)
+    raise HTTPException(status_code=404, detail="File not found")
+
+
 if __name__ == "__main__":
     import uvicorn
 

@@ -384,8 +384,20 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     ]
     missing = len(missing_books)
 
+    # Подсчёт общего размера хранилища
+    cursor = await db.execute(
+        "SELECT COALESCE(SUM(file_size), 0) FROM books WHERE source_id = ?",
+        (source_id,)
+    )
+    total_size = (await cursor.fetchone())[0]
+    await db.execute(
+        "UPDATE sources SET total_size = ? WHERE id = ?",
+        (total_size, source_id)
+    )
+    await db.commit()
+
     await db.close()
-    print(f"\nImport complete: {imported} new, {confirmed} confirmed, {covers_found} covers found, {missing} missing")
+    print(f"\nImport complete: {imported} new, {confirmed} confirmed, {covers_found} covers found, {missing} missing, total_size={total_size}")
 
     return {
         "source_id": source_id,
