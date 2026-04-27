@@ -125,12 +125,29 @@ async def parse_metadata_file(filepath: str) -> dict:
 
 
 def find_metadata_file(book_path: str) -> tuple[str | None, str]:
-    base = Path(book_path).with_suffix("")
+    base = str(Path(book_path).with_suffix(""))
+    # Handle .part1.rar -> base should be the stem before .part1
+    if ".part" in base.lower():
+        match = re.match(r"(.+)\.part\d+", base, re.IGNORECASE)
+        if match:
+            base = match.group(1)
     for ext in [".json", ".txt", ".html", ".dusd"]:
-        meta_file = str(base) + ext
+        meta_file = base + ext
         if os.path.exists(meta_file):
             return meta_file, ext
     return None, ""
+
+
+def find_cover_file(book_path: str) -> tuple[str | None, str]:
+    book_dir = Path(book_path).parent
+    if not book_dir.exists():
+        return None, ""
+    # Handle .part1.rar -> base should be the stem before .part1
+    base = Path(book_path).stem
+    if ".part" in base.lower():
+        match = re.match(r"(.+)\.part\d+", base, re.IGNORECASE)
+        if match:
+            base = match.group(1)
 
 
 async def parse_json_metadata_file(filepath: str) -> dict:
@@ -168,15 +185,23 @@ def find_cover_file(book_path: str) -> tuple[str | None, str]:
     book_dir = Path(book_path).parent
     if not book_dir.exists():
         return None, ""
+    
+    base_stem = Path(book_path).stem
+    base_stem = re.sub(r"\.part\d+$", "", base_stem, flags=re.IGNORECASE)
+    
     for ext in COVER_EXTENSIONS:
-        files = [f for f in os.listdir(book_dir) if f.lower().endswith(f'.{ext}')]
-        if files:
-            return str(book_dir / files[0]), ext
+        cover_name = f"{base_stem}.{ext}"
+        cover_path = book_dir / cover_name
+        if cover_path.exists():
+            return str(cover_path), ext
+    
     return None, ""
 
 
 def compute_relative_path(root_path: str, file_path: str) -> str:
     rel = os.path.relpath(file_path, root_path)
+    # Handle .part1.rar -> .rar (normalize multi-part archives)
+    rel = re.sub(r"\.part\d+(\.[^.]+)$", r"\1", rel, flags=re.IGNORECASE)
     return rel.replace("\\", "/")
 
 
@@ -200,8 +225,8 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
             if ext not in SUPPORTED_FORMATS:
                 continue
 
-            if ".part" in filename.lower():
-                continue
+            if ".part" in filename.lower() and not re.match(r".*\.part1\.rar$", filename, re.IGNORECASE):
+                continue  # Skip .part2, .part3 etc, only process .part1
 
             book_info = {
                 "file_path": filepath,
@@ -210,6 +235,9 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 "format": ext,
                 "file_size": os.path.getsize(filepath),
             }
+
+            # NOTE: file_path keeps actual path (with .part1) for file existence checks
+            # relative_path is normalized (without .part1) for DB matching
 
             meta_file, meta_ext = find_metadata_file(filepath)
             if meta_file:
@@ -228,8 +256,10 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 book_info["cover_ext"] = cover_ext
 
             if not book_info.get("title"):
+                # Normalize .part1.rar filename for title
+                title_filename = re.sub(r"\.part\d+(\.[^.]+)$", r"\1", filename, flags=re.IGNORECASE)
                 book_info["title"] = (
-                    Path(filename).stem.replace("_", " ").replace("-", " ")
+                    Path(title_filename).stem.replace("_", " ").replace("-", " ")
                 )
 
             if source_id:
@@ -289,9 +319,12 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
             "description": f"Импортировано {directory}",
         }
         source_id = await upsert_source_by_identifier(db, source_data)
-        print(
-            f"Source created/found: id={source_id}, catalog_id={catalog_id}, volume_label={volume_label}"
-        )
+        try:
+            print(
+                f"Source created/found: id={source_id}, catalog_id={catalog_id}, volume_label={volume_label}"
+            )
+        except UnicodeEncodeError:
+            pass
     else:
         source = await get_source_by_id(db, source_id)
         if source:
@@ -308,8 +341,6 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
                 }
                 await upsert_source_by_identifier(db, source_data)
 
-    await init_db()
-
     # Сброс устаревших флагов is_new_arrival (старше 7 дней)
     await reset_stale_new_arrivals(db, source_id)
 
@@ -324,10 +355,8 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     for book in books:
         category_id = None
         if book.get("category_name"):
-            category_id = await get_or_create_category(db, book["category_name"])
-
-        book["category_id"] = category_id
-        book["source_id"] = source_id
+            category_id = await get_or_create_category(db, book["category_name"], source_id)
+            book["category_id"] = category_id
 
         found_paths.append(book["relative_path"])
 
@@ -350,17 +379,14 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
                 covers_found += 1
             
             confirmed += 1
-            print(f"  + Confirmed: {book.get('title', 'Unknown')}")
         else:
             # Новая книга - добавляем с флагом is_new_arrival=1
             book_id, is_new = await upsert_book_preserve(db, book)
             if is_new:
                 imported += 1
-                print(f"  + New: {book.get('title', 'Unknown')}")
-            else:
-                confirmed += 1
+            confirmed += 1
 
-    # Получаем все книги хранилища из БД для поиска отсутствующих
+# Получаем все книги хранилища из БД для поиска отсутствующих
     all_source_books = await get_books_by_source_all(db, source_id)
     all_db_paths = set(book["relative_path"] for book in all_source_books)
 
@@ -428,7 +454,7 @@ async def import_library():
     for book in books:
         category_id = None
         if book.get("category_name"):
-            category_id = await get_or_create_category(db, book["category_name"])
+            category_id = await get_or_create_category(db, book["category_name"], 0)  # source_id=0 for legacy import
 
         book["category_id"] = category_id
 

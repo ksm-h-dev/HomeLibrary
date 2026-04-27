@@ -76,6 +76,30 @@
         .modal .form-group .transfer-info { background: #f8f9fa; padding: 10px; border-radius: 4px; margin-bottom: 15px; }
         .modal .form-group .transfer-info p { margin: 5px 0; font-size: 13px; }
         
+        .modal .transfer-progress { text-align: center; padding: 15px 0; }
+        .modal .transfer-progress p { margin-bottom: 10px; color: #666; }
+        .modal .progress-bar { 
+            width: 100%; 
+            height: 20px; 
+            background: #e9ecef; 
+            border-radius: 10px; 
+            overflow: hidden; 
+        }
+        .modal .progress-fill { 
+            height: 100%; 
+            background: linear-gradient(90deg, #4caf50, #8bc34a); 
+            width: 0%; 
+            transition: width 0.3s ease; 
+        }
+        .modal .transfer-current-book { 
+            margin-top: 8px; 
+            font-size: 12px; 
+            color: #999; 
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
         .pagination { display: flex; justify-content: center; gap: 10px; margin-top: 30px; }
         .pagination button { padding: 8px 16px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer; }
         .pagination button.active { background: #3498db; color: white; border-color: #3498db; }
@@ -294,15 +318,15 @@
             <h2>Редактирование хранилища</h2>
             <div class="form-group">
                 <label>Название</label>
-                <input type="text" id="sourceName">
+                <input type="text" id="editSourceName">
             </div>
             <div class="form-group">
                 <label>Путь</label>
-                <input type="text" id="sourcePath">
+                <input type="text" id="editSourcePath">
             </div>
             <div class="form-group">
                 <label>Тип</label>
-                <select id="sourceType">
+                <select id="editSourceType">
                     <option value="local">Local</option>
                     <option value="hdd">HDD</option>
                     <option value="ssd">SSD</option>
@@ -314,7 +338,7 @@
             </div>
             <div class="form-group">
                 <label>Статус</label>
-                <select id="sourceStatus">
+                <select id="editSourceStatus">
                     <option value="available">Доступно</option>
                     <option value="unavailable">Недоступно</option>
                     <option value="archived">Архив</option>
@@ -349,7 +373,14 @@
                     <button onclick="selectTransferFolder()">Обзор</button>
                 </div>
             </div>
-            <div class="buttons">
+            <div id="transferProgress" class="transfer-progress" style="display: none;">
+                <p>Перенос книг...</p>
+                <div class="progress-bar">
+                    <div id="transferProgressBar" class="progress-fill"></div>
+                </div>
+                <p id="transferCurrentBook" class="transfer-current-book"></p>
+            </div>
+            <div class="buttons" id="transferButtons">
                 <button class="save-btn" onclick="startTransfer()">Перенести</button>
                 <button class="cancel-btn" onclick="closeTransferModal()">Отмена</button>
             </div>
@@ -473,6 +504,13 @@
                                     <img src="cleanup.png" alt="Очистка">
                                 </div>
                                 <div class="tile-label">Очистка базы</div>
+                            </div>
+                            
+                            <div class="tools-tile" onclick="initDatabase()" title="Стереть базу">
+                                <div class="tile-icon">
+                                    <img src="wipe.png" alt="Стереть">
+                                </div>
+                                <div class="tile-label">Стереть базу</div>
                             </div>
                             
                             <div class="tools-tile" onclick="openTransferModal()" title="Перенос хранилища">
@@ -907,10 +945,10 @@
                 const res = await fetch('/api/setup/select-folder', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({})
+                    body: JSON.stringify({drive_letter: ""})
                 });
                 const data = await res.json();
-                
+
                 if (data.success && data.selected_path) {
                     document.getElementById('sourcePath').value = data.selected_path;
                     // Auto-fill name from folder name if empty
@@ -997,10 +1035,10 @@
                 console.log('source loaded:', source);
                 
                 editingSourceId = sourceId;
-                document.getElementById('sourceName').value = source.name || '';
-                document.getElementById('sourcePath').value = source.path || '';
-                document.getElementById('sourceType').value = source.type || 'local';
-                document.getElementById('sourceStatus').value = source.availability_status || 'available';
+                document.getElementById('editSourceName').value = source.name || '';
+                document.getElementById('editSourcePath').value = source.path || '';
+                document.getElementById('editSourceType').value = source.type || 'local';
+                document.getElementById('editSourceStatus').value = source.availability_status || 'available';
                 
                 const modal = document.getElementById('editSourceModal');
                 modal.classList.add('active');
@@ -1020,10 +1058,10 @@
             if (!editingSourceId) return;
             
             const data = {
-                name: document.getElementById('sourceName').value,
-                path: document.getElementById('sourcePath').value,
-                type: document.getElementById('sourceType').value,
-                availability_status: document.getElementById('sourceStatus').value
+                name: document.getElementById('editSourceName').value,
+                path: document.getElementById('editSourcePath').value,
+                type: document.getElementById('editSourceType').value,
+                availability_status: document.getElementById('editSourceStatus').value
             };
             
             try {
@@ -1130,6 +1168,23 @@
             } catch (e) {
                 console.error(e);
                 alert('Ошибка при очистке');
+            }
+        }
+        
+        async function initDatabase() {
+            if (!confirm('Стереть всю базу данных? Все книги и хранилища будут удалены!')) return;
+            if (!confirm('Вы уверены? Это действие необратимо.')) return;
+            
+            try {
+                const res = await fetch('/api/setup/initialize', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message + '\nУдалено книг: ' + data.books_deleted + '\nУдалено хранилищ: ' + data.sources_deleted);
+                loadBooks();
+                loadStats();
+                loadSources();
+            } catch (e) {
+                console.error(e);
+                alert('Ошибка при инициализации');
             }
         }
         
@@ -1323,6 +1378,13 @@
         
         function closeTransferModal() {
             document.getElementById('transferModal').classList.remove('active');
+            // Reset form
+            document.getElementById('transferProgress').style.display = 'none';
+            document.getElementById('transferButtons').style.display = 'block';
+            document.getElementById('transferInfo').style.display = 'none';
+            document.getElementById('transferSourceSelect').value = '';
+            document.getElementById('transferTargetPath').value = '';
+            document.getElementById('transferProgressBar').style.width = '0%';
         }
         
         async function loadTransferInfo() {
@@ -1347,10 +1409,14 @@
         async function selectTransferFolder() {
             // Use PowerShellFolderBrowserDialog via API
             try {
-                const res = await fetch('/api/setup/select-folder', { method: 'POST' });
+                const res = await fetch('/api/setup/select-folder', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({drive_letter: ""})
+                });
                 const data = await res.json();
-                if (data.path) {
-                    document.getElementById('transferTargetPath').value = data.path;
+                if (data.success && data.selected_path) {
+                    document.getElementById('transferTargetPath').value = data.selected_path;
                 }
             } catch (e) {
                 console.error(e);
@@ -1368,11 +1434,21 @@
             
             if (!confirm('Начать перенос хранилища?')) return;
             
+            // Show progress UI
+            document.getElementById('transferProgress').style.display = 'block';
+            document.getElementById('transferButtons').style.display = 'none';
+            document.getElementById('transferInfo').style.display = 'none';
+            
+            const progressBar = document.getElementById('transferProgressBar');
+            const currentBook = document.getElementById('transferCurrentBook');
+            
             try {
                 const res = await fetch('/api/sources/' + sourceId + '/transfer?target_path=' + encodeURIComponent(targetPath), {
                     method: 'POST'
                 });
                 const data = await res.json();
+                
+                progressBar.style.width = '100%';
                 
                 if (data.success) {
                     alert(data.message);
@@ -1384,6 +1460,9 @@
             } catch (e) {
                 console.error(e);
                 alert('Ошибка при переносе');
+            } finally {
+                document.getElementById('transferProgress').style.display = 'none';
+                document.getElementById('transferButtons').style.display = 'block';
             }
         }
         
@@ -1392,32 +1471,17 @@
                 const res = await fetch('/api/setup/status');
                 const data = await res.json();
                 
-                if (data.needs_setup) {
-                    // If config has path and no sources - try to auto-scan
-                    if (data.default_source_path && data.total_sources === 0 && data.total_books === 0) {
-                        const confirmScan = confirm(
-                            'Найдена папка с книгами: ' + data.default_source_path + '\n\n' +
-                            'Автоматически просканировать её?'
-                        );
-                        if (confirmScan) {
-                            // Trigger initial scan
-                            try {
-                                await fetch('/api/setup/scan', {
-                                    method: 'POST',
-                                    headers: {'Content-Type': 'application/json'},
-                                    body: JSON.stringify({path: data.default_source_path})
-                                });
-                            } catch (e) {
-                                console.error('Auto-scan failed:', e);
-                            }
-                        }
-                    }
-                    
-                    // If still needs setup after potential scan, go to wizard
-                    if (data.total_sources === 0) {
-                        window.location.href = '/setup';
-                        return false;
-                    }
+                // Skip check if user already completed (or skipped) setup before
+                if (localStorage.getItem('setup_skipped')) {
+                    return true;
+                }
+                
+                // Only go to setup wizard if:
+                // 1. It's first run (no sources, no books) AND
+                // 2. There's a default source path configured in config
+                if (data.needs_setup && data.default_source_path) {
+                    window.location.href = '/setup';
+                    return false;
                 }
                 return true;
             } catch (e) {

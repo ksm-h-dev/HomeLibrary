@@ -202,7 +202,7 @@
                 const res = await fetch('/api/setup/select-folder', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({})
+                    body: JSON.stringify({drive_letter: ""})
                 });
                 const data = await res.json();
                 
@@ -290,6 +290,22 @@
         
         async function skipSetup() {
             try {
+                // Save selected path as a source before skipping
+                if (selectedPath) {
+                    const sourceName = selectedPath.split('\\').pop() || 'Library';
+                    await fetch('/api/sources', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            name: sourceName,
+                            type: 'local',
+                            path: selectedPath,
+                            is_active: true
+                        })
+                    });
+                }
+                
+                localStorage.setItem('setup_skipped', 'true');
                 await fetch('/api/setup/skip', {method: 'POST'});
                 window.location.href = '/';
             } catch (e) {

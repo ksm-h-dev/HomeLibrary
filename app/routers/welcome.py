@@ -31,10 +31,8 @@ async def get_setup_status(db: aiosqlite.Connection = Depends(get_db)):
     # First run if: no sources AND no books
     is_first_run = total_sources == 0 and total_books == 0
 
-    # Needs setup if first run OR if we have valid default path but no sources to scan from
-    # Show setup wizard if there's a default path that could be used but no sources exist yet
-    config_has_path = DEFAULT_SOURCE_PATH and os.path.exists(DEFAULT_SOURCE_PATH)
-    needs_setup = is_first_run or (config_has_path and total_sources == 0)
+    # Needs setup only on first run with no data (user can add sources from main page)
+    needs_setup = is_first_run
 
     return SetupStatus(
         is_first_run=is_first_run,
@@ -228,8 +226,8 @@ async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
         # Delete all sources
         await db.execute("DELETE FROM sources")
 
-        # Delete all categories (optional - keeping them might be useful)
-        # await db.execute("DELETE FROM categories")
+        # Delete all categories
+        await db.execute("DELETE FROM categories")
 
         # Clear FTS index by deleting all entries (triggers will handle this but FTS table needs manual cleanup)
         await db.execute("DELETE FROM books_fts")

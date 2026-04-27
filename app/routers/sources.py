@@ -13,8 +13,8 @@ from app.database import (
     update_source_scan_time,
     get_books_by_source,
     check_source_availability,
+    transfer_source as db_transfer_source,
     get_source_transfer_info,
-    transfer_source,
 )
 from app.models import (
     SourceCreate,
@@ -171,7 +171,7 @@ async def transfer_source(
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Переносит хранилище в новое место."""
-    result = await transfer_source(
+    result = await db_transfer_source(
         db, source_id, target_path, target_source_id, conflict_callback=None
     )
     if not result.get("success"):

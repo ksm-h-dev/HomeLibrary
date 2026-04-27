@@ -33,9 +33,12 @@ async def init_db():
 
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                source_id INTEGER,
                 parent_id INTEGER,
-                FOREIGN KEY (parent_id) REFERENCES categories(id)
+                FOREIGN KEY (source_id) REFERENCES sources(id) ON DELETE CASCADE,
+                FOREIGN KEY (parent_id) REFERENCES categories(id),
+                UNIQUE(name, source_id)
             );
 
             CREATE TABLE IF NOT EXISTS books (
@@ -65,14 +68,14 @@ async def init_db():
 
             CREATE VIEW IF NOT EXISTS category_paths AS
             WITH RECURSIVE cat_path AS (
-                SELECT id, name, parent_id, name as full_path
+                SELECT id, name, source_id, parent_id, name as full_path
                 FROM categories WHERE parent_id IS NULL
                 UNION ALL
-                SELECT c.id, c.name, c.parent_id, cat_path.full_path || '/' || c.name
+                SELECT c.id, c.name, c.source_id, c.parent_id, cat_path.full_path || '/' || c.name
                 FROM categories c
                 INNER JOIN cat_path ON c.parent_id = cat_path.id
             )
-            SELECT id, name, parent_id, full_path FROM cat_path;
+            SELECT id, name, source_id, parent_id, full_path FROM cat_path;
         """)
         try:
             await db.execute(
@@ -327,29 +330,46 @@ async def get_book_by_id(db: aiosqlite.Connection, book_id: int):
 async def get_categories(db: aiosqlite.Connection):
     cursor = await db.execute("""
         WITH RECURSIVE cat_path AS (
-            SELECT id, name, parent_id, name as full_path
+            SELECT id, name, source_id, parent_id, name as full_path
             FROM categories WHERE parent_id IS NULL
             UNION ALL
-            SELECT c.id, c.name, c.parent_id, cat_path.full_path || '/' || c.name
+            SELECT c.id, c.name, c.source_id, c.parent_id, cat_path.full_path || '/' || c.name
             FROM categories c
             INNER JOIN cat_path ON c.parent_id = cat_path.id
         )
-        SELECT id, name, parent_id, full_path FROM cat_path ORDER BY full_path
+        SELECT id, name, source_id, parent_id, full_path FROM cat_path ORDER BY full_path
     """)
     rows = await cursor.fetchall()
     return [dict(row) for row in rows]
 
 
 async def get_or_create_category(
-    db: aiosqlite.Connection, name: str, parent_id: int = None
+    db: aiosqlite.Connection, name: str, source_id: int, parent_id: int = None
 ):
-    cursor = await db.execute("SELECT id FROM categories WHERE name = ?", (name,))
+    cursor = await db.execute(
+        "SELECT id FROM categories WHERE name = ? AND source_id = ?", (name, source_id)
+    )
     row = await cursor.fetchone()
     if row:
         return row[0]
+    
+    # Fallback: check legacy categories (source_id=0) if this is a new source
+    if source_id != 0:
+        cursor = await db.execute(
+            "SELECT id FROM categories WHERE name = ? AND source_id = 0", (name,)
+        )
+        row = await cursor.fetchone()
+        if row:
+            # Migrate legacy category to this source
+            await db.execute(
+                "UPDATE categories SET source_id = ? WHERE id = ?", (source_id, row[0])
+            )
+            await db.commit()
+            return row[0]
 
     cursor = await db.execute(
-        "INSERT INTO categories (name, parent_id) VALUES (?, ?)", (name, parent_id)
+        "INSERT INTO categories (name, source_id, parent_id) VALUES (?, ?, ?)",
+        (name, source_id, parent_id),
     )
     await db.commit()
     return cursor.lastrowid
@@ -749,6 +769,20 @@ async def delete_source(db: aiosqlite.Connection, source_id: int):
     # book_tags удалятся автоматически благодаря ON DELETE CASCADE
     # books_fts обновится автоматически благодаря триггеру books_ad
     await db.execute("DELETE FROM books WHERE source_id = ?", (source_id,))
+    
+    # Удаляем осиротевшие книги (source_id = NULL)
+    await db.execute("DELETE FROM books WHERE source_id IS NULL")
+    
+    # Удаляем книги с несуществующим source_id
+    await db.execute("""
+        DELETE FROM books 
+        WHERE source_id IS NOT NULL 
+        AND source_id NOT IN (SELECT id FROM sources)
+    """)
+    
+    # Удаляем категории этого хранилища
+    await db.execute("DELETE FROM categories WHERE source_id = ?", (source_id,))
+    
     # Затем удаляем само хранилище
     await db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
     await db.commit()
@@ -855,7 +889,9 @@ async def transfer_source(
     books = await cursor.fetchall()
     
     transferred = 0
+    deleted_originals = 0
     errors = []
+    successful_book_ids = []
     
     for book_row in books:
         book = dict(book_row)
@@ -891,10 +927,18 @@ async def transfer_source(
                     continue
             
             try:
+                # Копируем файл на новое место
                 shutil.copy2(source_file, target_file)
                 book["file_path"] = target_file
                 book["relative_path"] = os.path.join(category_path, os.path.basename(source_file)) if category_path else os.path.basename(source_file)
                 book["file_size"] = os.path.getsize(target_file)
+                
+                # Удаляем оригинал после успешного копирования
+                try:
+                    os.remove(source_file)
+                    deleted_originals += 1
+                except Exception as e:
+                    errors.append(f"Не удалось удалить оригинал {source_file}: {str(e)}")
             except Exception as e:
                 errors.append(f"Ошибка {book.get('title')}: {str(e)}")
                 continue
@@ -906,6 +950,11 @@ async def transfer_source(
             try:
                 shutil.copy2(cover_path, target_cover)
                 book["cover_path"] = target_cover
+                # Удаляем оригинал обложки
+                try:
+                    os.remove(cover_path)
+                except:
+                    pass
             except:
                 pass
         
@@ -916,15 +965,21 @@ async def transfer_source(
                 target_json = os.path.splitext(target_file)[0] + ".json"
                 try:
                     shutil.copy2(json_path, target_json)
+                    # Удаляем оригинал .json
+                    try:
+                        os.remove(json_path)
+                    except:
+                        pass
                 except:
                     pass
         
         transferred += 1
+        successful_book_ids.append(book_row["id"])
     
     if transferred == 0:
         return {"success": False, "message": "Не удалось перенести ни одной книги"}
     
-    # Создаём новое хран��лище
+    # Создаём новое хранилище
     new_source_id = None
     if is_new_target:
         cursor = await db.execute(
@@ -933,20 +988,72 @@ async def transfer_source(
         )
         await db.commit()
         new_source_id = cursor.lastrowid
+    
+    # Обновляем source_id и пути для успешно перенесённых книг
+    for book_row in books:
+        if book_row["id"] not in successful_book_ids:
+            continue
+        # Находим категорию
+        category_path = ""
+        for cat in categories:
+            if cat["id"] == book_row["category_id"]:
+                category_path = cat["full_path"]
+                break
         
-        # Обновляем category_id для книг
-        for book_row in books:
-            book_id = book_row["id"]
+        target_dir = os.path.join(target_path, category_path) if category_path else target_path
+        source_file = book_row["file_path"]
+        if source_file:
+            new_relative_path = os.path.join(category_path, os.path.basename(source_file)) if category_path else os.path.basename(source_file)
+            new_file_path = os.path.join(target_dir, os.path.basename(source_file))
+            
             await db.execute(
-                "UPDATE books SET source_id = ?, is_available = 1 WHERE id = ?",
-                (new_source_id, book_id)
+                """UPDATE books SET source_id = ?, file_path = ?, relative_path = ?, is_available = 1 WHERE id = ?""",
+                (new_source_id if is_new_target else target_source_id, new_file_path, new_relative_path, book_row["id"])
             )
+    await db.commit()
+    
+    # Удаляем книги из старого хранилища, которые не удалось перенести
+    if is_new_target:
+        for book_row in books:
+            if book_row["id"] not in successful_book_ids:
+                await db.execute("DELETE FROM books WHERE id = ?", (book_row["id"],))
         await db.commit()
+    
+    # Удаляем старое хранилище из БД
+    await db.execute("DELETE FROM sources WHERE id = ?", (source_id,))
+    await db.commit()
+    
+    # Удаляем осиротевшие книги (source_id = NULL или несуществующий source_id)
+    await db.execute("DELETE FROM books WHERE source_id IS NULL")
+    await db.execute("""
+        DELETE FROM books 
+        WHERE source_id IS NOT NULL 
+        AND source_id NOT IN (SELECT id FROM sources)
+    """)
+    await db.commit()
+    
+    # Пытаемся удалить пустые папки категорий старого хранилища
+    try:
+        for cat in categories:
+            cat_full_path = os.path.join(source_path, cat["full_path"]) if cat["full_path"] else source_path
+            if os.path.exists(cat_full_path) and not os.listdir(cat_full_path):
+                try:
+                    os.rmdir(cat_full_path)
+                except:
+                    pass
+        # Удаляем саму директорию хранилища если она пустая
+        if os.path.exists(source_path) and not os.listdir(source_path):
+            try:
+                os.rmdir(source_path)
+            except:
+                pass
+    except:
+        pass
     
     return {
         "success": True,
-        "message": f"Перенесено {transferred} книг",
-        "new_source_id": new_source_id,
+        "message": f"Перенесено {transferred} книг, удалено оригиналов: {deleted_originals}",
+        "new_source_id": new_source_id if is_new_target else target_source_id,
         "transferred_count": transferred,
         "errors": errors,
     }
@@ -1035,27 +1142,18 @@ async def confirm_book_presence(db: aiosqlite.Connection, book_id: int, filepath
     Обновляет:
     - is_available = 1 (книга в наличии)
     - last_seen = CURRENT_TIMESTAMP (время последнего подтверждения)
-    - cover_ext (если найдена обложка и ранее не была установлена)
+    - cover_ext (если найдена обложка - обновляем, иначе очищаем)
     Флаг is_new_arrival НЕ сбрасывается (сбрасывается через 7 дней)
     """
     from services.importer import find_cover_file
     
+    cover_file, cover_ext = find_cover_file(filepath) if filepath else (None, None)
+    
     if filepath:
-        cover_file, cover_ext = find_cover_file(filepath)
-        if cover_ext:
-            await db.execute(
-                "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP, cover_ext = ? WHERE id = ? AND (cover_ext = '' OR cover_ext IS NULL)",
-                (cover_ext, book_id),
-            )
-            await db.execute(
-                "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
-                (book_id,),
-            )
-        else:
-            await db.execute(
-                "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
-                (book_id,),
-            )
+        await db.execute(
+            "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP, cover_ext = ? WHERE id = ?",
+            (cover_ext or "", book_id),
+        )
     else:
         await db.execute(
             "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP WHERE id = ?",
