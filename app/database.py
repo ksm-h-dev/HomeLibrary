@@ -899,7 +899,11 @@ async def transfer_source(
     
     # Создаём целевую директорию если нужно
     if is_new_target:
-        os.makedirs(target_path, exist_ok=True)
+        try:
+            os.makedirs(target_path, exist_ok=True)
+            operation_log.append({"type": "category_create", "path": target_path, "status": "success"})
+        except Exception as e:
+            operation_log.append({"type": "category_create", "path": target_path, "status": "error", "error": str(e)})
     
     # Получаем все книги хранилища
     cursor = await db.execute(
@@ -912,6 +916,7 @@ async def transfer_source(
     errors = []
     successful_book_ids = []
     detailed_log = []  # Подробный лог
+    operation_log = []  # Лог операций: копирование, удаление, категории
     
     for book_row in books:
         book = dict(book_row)
@@ -935,7 +940,20 @@ async def transfer_source(
         else:
             target_dir = os.path.join(target_path, category_path) if category_path else target_path
         
-        os.makedirs(target_dir, exist_ok=True)
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+            operation_log.append({
+                "type": "category_create",
+                "path": target_dir,
+                "status": "success"
+            })
+        except Exception as e:
+            operation_log.append({
+                "type": "category_create",
+                "path": target_dir,
+                "status": "error",
+                "error": str(e)
+            })
         
         # Переносим файл книги
         source_file = book.get("file_path", "")
@@ -973,12 +991,25 @@ async def transfer_source(
         try:
             # Копируем файл на новое место
             shutil.copy2(source_file, target_file)
+            operation_log.append({
+                "type": "file_copy",
+                "source": source_file,
+                "target": target_file,
+                "status": "success"
+            })
             book["file_path"] = target_file
             book["relative_path"] = os.path.join(category_path, os.path.basename(source_file)) if category_path else os.path.basename(source_file)
             book["file_size"] = os.path.getsize(target_file)
         except Exception as e:
             book_log["status"] = "error"
             book_log["details"] = f"Ошибка копирования: {str(e)}"
+            operation_log.append({
+                "type": "file_copy",
+                "source": source_file,
+                "target": target_file,
+                "status": "error",
+                "error": str(e)
+            })
             errors.append(f"Ошибка {book.get('title')}: {str(e)}")
             detailed_log.append(book_log)
             continue
@@ -986,7 +1017,19 @@ async def transfer_source(
         # Удаляем оригинал после успешного копирования
         try:
             os.remove(source_file)
+            operation_log.append({
+                "type": "file_delete",
+                "path": source_file,
+                "status": "success"
+            })
             deleted_originals += 1
+        except Exception as e:
+            operation_log.append({
+                "type": "file_delete",
+                "path": source_file,
+                "status": "error",
+                "error": str(e)
+            })
         except Exception as e:
             book_log["details"] += f" | Оригинал не удалён: {str(e)}"
         
@@ -996,14 +1039,36 @@ async def transfer_source(
             target_cover = os.path.join(target_dir, os.path.basename(cover_path))
             try:
                 shutil.copy2(cover_path, target_cover)
+                operation_log.append({
+                    "type": "file_copy",
+                    "source": cover_path,
+                    "target": target_cover,
+                    "status": "success"
+                })
                 book["cover_path"] = target_cover
                 try:
                     os.remove(cover_path)
+                    operation_log.append({
+                        "type": "file_delete",
+                        "path": cover_path,
+                        "status": "success"
+                    })
                     deleted_originals += 1
                 except Exception as e:
-                    book_log["details"] += f" | Обложка не удалена: {str(e)}"
+                    operation_log.append({
+                        "type": "file_delete",
+                        "path": cover_path,
+                        "status": "error",
+                        "error": str(e)
+                    })
             except Exception as e:
-                book_log["details"] += f" | Обложка не скопирована: {str(e)}"
+                operation_log.append({
+                    "type": "file_copy",
+                    "source": cover_path,
+                    "target": target_cover,
+                    "status": "error",
+                    "error": str(e)
+                })
         
         # Переносим метаданные .json если есть
         if source_file:
@@ -1012,13 +1077,35 @@ async def transfer_source(
                 target_json = os.path.splitext(target_file)[0] + ".json"
                 try:
                     shutil.copy2(json_path, target_json)
+                    operation_log.append({
+                        "type": "file_copy",
+                        "source": json_path,
+                        "target": target_json,
+                        "status": "success"
+                    })
                     try:
                         os.remove(json_path)
+                        operation_log.append({
+                            "type": "file_delete",
+                            "path": json_path,
+                            "status": "success"
+                        })
                         deleted_originals += 1
                     except Exception as e:
-                        book_log["details"] += f" | JSON не удалён: {str(e)}"
+                        operation_log.append({
+                            "type": "file_delete",
+                            "path": json_path,
+                            "status": "error",
+                            "error": str(e)
+                        })
                 except Exception as e:
-                    book_log["details"] += f" | JSON не скопирован: {str(e)}"
+                    operation_log.append({
+                        "type": "file_copy",
+                        "source": json_path,
+                        "target": target_json,
+                        "status": "error",
+                        "error": str(e)
+                    })
         
         # Переносим .txt метаданные если есть
         if source_file:
@@ -1027,13 +1114,35 @@ async def transfer_source(
                 target_txt = os.path.splitext(target_file)[0] + ".txt"
                 try:
                     shutil.copy2(txt_path, target_txt)
+                    operation_log.append({
+                        "type": "file_copy",
+                        "source": txt_path,
+                        "target": target_txt,
+                        "status": "success"
+                    })
                     try:
                         os.remove(txt_path)
+                        operation_log.append({
+                            "type": "file_delete",
+                            "path": txt_path,
+                            "status": "success"
+                        })
                         deleted_originals += 1
                     except Exception as e:
-                        book_log["details"] += f" | TXT не удалён: {str(e)}"
+                        operation_log.append({
+                            "type": "file_delete",
+                            "path": txt_path,
+                            "status": "error",
+                            "error": str(e)
+                        })
                 except Exception as e:
-                    book_log["details"] += f" | TXT не скопирован: {str(e)}"
+                    operation_log.append({
+                        "type": "file_copy",
+                        "source": txt_path,
+                        "target": target_txt,
+                        "status": "error",
+                        "error": str(e)
+                    })
         
         transferred += 1
         successful_book_ids.append(book_row["id"])
@@ -1098,22 +1207,49 @@ async def transfer_source(
     await db.commit()
     
     # Пытаемся удалить пустые папки категорий старого хранилища
+    category_delete_errors = []
     try:
         for cat in categories:
             cat_full_path = os.path.join(source_path, cat["full_path"]) if cat["full_path"] else source_path
             if os.path.exists(cat_full_path) and not os.listdir(cat_full_path):
                 try:
                     os.rmdir(cat_full_path)
-                except:
-                    pass
+                    operation_log.append({
+                        "type": "category_delete",
+                        "path": cat_full_path,
+                        "status": "success"
+                    })
+                except Exception as e:
+                    operation_log.append({
+                        "type": "category_delete",
+                        "path": cat_full_path,
+                        "status": "error",
+                        "error": str(e)
+                    })
+                    category_delete_errors.append(cat["full_path"])
         # Удаляем саму директорию хранилища если она пустая
         if os.path.exists(source_path) and not os.listdir(source_path):
             try:
                 os.rmdir(source_path)
-            except:
-                pass
-    except:
-        pass
+                operation_log.append({
+                    "type": "category_delete",
+                    "path": source_path,
+                    "status": "success"
+                })
+            except Exception as e:
+                operation_log.append({
+                    "type": "category_delete",
+                    "path": source_path,
+                    "status": "error",
+                    "error": str(e)
+                })
+    except Exception as e:
+        operation_log.append({
+            "type": "category_cleanup",
+            "path": source_path,
+            "status": "error",
+            "error": str(e)
+        })
     
     return {
         "success": True,
@@ -1124,6 +1260,7 @@ async def transfer_source(
         "errors_count": len(errors),
         "errors": errors,
         "detailed_log": detailed_log,
+        "operation_log": operation_log,
     }
 
 

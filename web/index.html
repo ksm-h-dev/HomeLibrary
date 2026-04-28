@@ -519,6 +519,13 @@
                                 </div>
                                 <div class="tile-label">Перенос хранилища</div>
                             </div>
+                            
+                            <div class="tools-tile" onclick="openLogModal()" title="Просмотр лога">
+                                <div class="tile-icon">
+                                    <img src="log.png" alt="Лог">
+                                </div>
+                                <div class="tile-label">Log</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1374,6 +1381,34 @@
                     select.appendChild(opt);
                 });
             } catch (e) { console.error(e); }
+        }
+        
+        async function openLogModal() {
+            document.getElementById('logModal').classList.add('active');
+            document.getElementById('logContent').innerHTML = '<div class="loading">Загрузка...</div>';
+            
+            try {
+                const res = await fetch('/api/sources/log');
+                const data = await res.json();
+                
+                if (data.logs && data.logs.length > 0) {
+                    let html = '<pre class="log-pre">';
+                    data.logs.forEach(entry => {
+                        const time = new Date(entry.timestamp).toLocaleString('ru-RU');
+                        html += '[' + time + '] ' + entry.message + '\n';
+                    });
+                    html += '</pre>';
+                    document.getElementById('logContent').innerHTML = html;
+                } else {
+                    document.getElementById('logContent').innerHTML = '<div class="empty">Лог пуст</div>';
+                }
+            } catch (e) {
+                document.getElementById('logContent').innerHTML = '<div class="error">Ошибка загрузки: ' + e.message + '</div>';
+            }
+        }
+        
+        function closeLogModal() {
+            document.getElementById('logModal').classList.remove('active');
         }
         
         function closeTransferModal() {
