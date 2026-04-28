@@ -214,6 +214,8 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
         category_name = Path(root).name
         if root == directory:
             category_name = ""
+        else:
+            category_name = os.path.relpath(root, directory).replace("\\", "/")
 
         for filename in files:
             if filename.startswith("."):

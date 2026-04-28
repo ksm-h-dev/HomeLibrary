@@ -125,6 +125,15 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 - Search results include `title_hl` and `desc_snippet`
 - Search supports `availability` filter: `available`, `missing`, `new`
 
+## Категории
+
+- **Структура**: иерархия через `parent_id`, full_path вычисляется через VIEW `category_paths`
+- **Индивидуальность**: каждая категория привязана к `source_id`
+- **Фильтр**: ищет по последней части пути (после `/`), примеры:
+  - `Soft/Server 2003` → ищет `Server 2003`
+  - `Учеба/Soft/Server 2003` → ищет `Server 2003`
+  - `Книги/Языки/English` → ищет `English`
+
 ## Configuration (config.py)
 
 ```python

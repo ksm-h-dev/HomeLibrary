@@ -226,7 +226,8 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
 **Query Parameters:**
 - `limit` (int, optional): Количество записей (default: 20)
 - `offset` (int, optional): Смещение (default: 0)
-- `category` (string, optional): Фильтр по категории
+- `category` (string, optional): Фильтр по категории. Извлекается последняя часть пути (после `/`) и ищется по LIKE.
+  Примеры: `Soft/Server 2003` → ищет `Server 2003`; `Учеба/Книги/English` → ищет `English`
 - `format` (string, optional): Формат файла
 - `year` (int, optional): Год издания
 - `source_id` (int, optional): ID хранилища

@@ -149,8 +149,10 @@ async def get_all_books(
     params = []
     conditions = []
     if category:
-        conditions.append("c.full_path = ?")
-        params.append(category)
+        last_part = category.rsplit("/", 1)[-1]
+        filter_pattern = f"%{last_part}%"
+        conditions.append("c.full_path LIKE ?")
+        params.append(filter_pattern)
     if format:
         conditions.append("b.format = ?")
         params.append(format)
@@ -239,8 +241,10 @@ async def search_books(
         sql += " AND b.format = ?"
         params.append(format)
     if category:
-        sql += " AND c.full_path = ?"
-        params.append(category)
+        last_part = category.rsplit("/", 1)[-1]
+        filter_pattern = f"%{last_part}%"
+        sql += " AND c.full_path LIKE ?"
+        params.append(filter_pattern)
     if year:
         sql += " AND b.year = ?"
         params.append(year)
@@ -283,8 +287,10 @@ async def search_books(
         count_sql += " AND b.format = ?"
         count_params.append(format)
     if category:
-        count_sql += " AND c.full_path = ?"
-        count_params.append(category)
+        last_part = category.rsplit("/", 1)[-1]
+        filter_pattern = f"%{last_part}%"
+        count_sql += " AND c.full_path LIKE ?"
+        count_params.append(filter_pattern)
     if year:
         count_sql += " AND b.year = ?"
         count_params.append(year)
@@ -344,35 +350,48 @@ async def get_categories(db: aiosqlite.Connection):
 
 
 async def get_or_create_category(
-    db: aiosqlite.Connection, name: str, source_id: int, parent_id: int = None
+    db: aiosqlite.Connection, full_path: str, source_id: int
 ):
-    cursor = await db.execute(
-        "SELECT id FROM categories WHERE name = ? AND source_id = ?", (name, source_id)
-    )
-    row = await cursor.fetchone()
-    if row:
-        return row[0]
+    if not full_path:
+        return None
     
-    # Fallback: check legacy categories (source_id=0) if this is a new source
-    if source_id != 0:
+    parts = [p for p in full_path.split("/") if p]
+    if not parts:
+        return None
+    
+    parent_id = None
+    for i, name in enumerate(parts):
         cursor = await db.execute(
-            "SELECT id FROM categories WHERE name = ? AND source_id = 0", (name,)
+            "SELECT id FROM categories WHERE name = ? AND source_id = ?",
+            (name, source_id)
         )
         row = await cursor.fetchone()
         if row:
-            # Migrate legacy category to this source
+            parent_id = row[0]
+            continue
+        
+        cursor = await db.execute(
+            "SELECT id FROM categories WHERE name = ? AND source_id = 0",
+            (name,)
+        )
+        row = await cursor.fetchone()
+        if row:
             await db.execute(
-                "UPDATE categories SET source_id = ? WHERE id = ?", (source_id, row[0])
+                "UPDATE categories SET source_id = ? WHERE id = ?",
+                (source_id, row[0])
             )
             await db.commit()
-            return row[0]
-
-    cursor = await db.execute(
-        "INSERT INTO categories (name, source_id, parent_id) VALUES (?, ?, ?)",
-        (name, source_id, parent_id),
-    )
-    await db.commit()
-    return cursor.lastrowid
+            parent_id = row[0]
+            continue
+        
+        cursor = await db.execute(
+            "INSERT INTO categories (name, source_id, parent_id) VALUES (?, ?, ?)",
+            (name, source_id, parent_id),
+        )
+        await db.commit()
+        parent_id = cursor.lastrowid
+    
+    return parent_id
 
 
 async def insert_book(db: aiosqlite.Connection, book_data: dict):

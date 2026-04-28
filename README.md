@@ -148,7 +148,7 @@ GET /api/books?limit=20&offset=0&category=Programming&format=pdf&year=2020&sourc
 
 - `limit` - количество результатов (по умолчанию 20)
 - `offset` - смещение для пагинации
-- `category` - категория книги
+- `category` - категория книги (фильтр по последней части пути, например `Книги/English` → ищет `English`)
 - `format` - формат файла (pdf, djvu, rar, zip)
 - `year` - год издания
 - `source_id` - ID хранилища
