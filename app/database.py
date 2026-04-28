@@ -911,10 +911,17 @@ async def transfer_source(
     deleted_originals = 0
     errors = []
     successful_book_ids = []
+    detailed_log = []  # Подробный лог
     
     for book_row in books:
         book = dict(book_row)
-        category_path = ""
+        book_log = {
+            "id": book.get("id"),
+            "title": book.get("title"),
+            "file": os.path.basename(book.get("file_path", "")),
+            "status": "pending",
+            "details": ""
+        }
         
         # Находим категорию книги
         for cat in categories:
@@ -932,35 +939,56 @@ async def transfer_source(
         
         # Переносим файл книги
         source_file = book.get("file_path", "")
-        if source_file and os.path.exists(source_file):
-            target_file = os.path.join(target_dir, os.path.basename(source_file))
+        
+        if not source_file:
+            book_log["status"] = "skipped"
+            book_log["details"] = "Пустой file_path"
+            detailed_log.append(book_log)
+            continue
             
-            # Проверка конфликта
-            if os.path.exists(target_file):
-                if conflict_callback:
-                    if not conflict_callback(target_file):
-                        errors.append(f"Пропущен: {book.get('title')}")
-                        continue
-                else:
-                    errors.append(f"Конфликт: {os.path.basename(source_file)}")
+        if not os.path.exists(source_file):
+            book_log["status"] = "error"
+            book_log["details"] = f"Файл не найден: {source_file}"
+            errors.append(f"ID {book.get('id')}: Файл не найден")
+            detailed_log.append(book_log)
+            continue
+            
+        target_file = os.path.join(target_dir, os.path.basename(source_file))
+        
+        # Проверка конфликта
+        if os.path.exists(target_file):
+            if conflict_callback:
+                if not conflict_callback(target_file):
+                    book_log["status"] = "skipped"
+                    book_log["details"] = f"Конфликт: пользователь отказался"
+                    detailed_log.append(book_log)
                     continue
-            
-            try:
-                # Копируем файл на новое место
-                shutil.copy2(source_file, target_file)
-                book["file_path"] = target_file
-                book["relative_path"] = os.path.join(category_path, os.path.basename(source_file)) if category_path else os.path.basename(source_file)
-                book["file_size"] = os.path.getsize(target_file)
-                
-                # Удаляем оригинал после успешного копирования
-                try:
-                    os.remove(source_file)
-                    deleted_originals += 1
-                except Exception as e:
-                    errors.append(f"Не удалось удалить оригинал {source_file}: {str(e)}")
-            except Exception as e:
-                errors.append(f"Ошибка {book.get('title')}: {str(e)}")
+            else:
+                book_log["status"] = "skipped"
+                book_log["details"] = f"Конфликт: файл уже существует"
+                errors.append(f"Конфликт: {os.path.basename(source_file)}")
+                detailed_log.append(book_log)
                 continue
+        
+        try:
+            # Копируем файл на новое место
+            shutil.copy2(source_file, target_file)
+            book["file_path"] = target_file
+            book["relative_path"] = os.path.join(category_path, os.path.basename(source_file)) if category_path else os.path.basename(source_file)
+            book["file_size"] = os.path.getsize(target_file)
+        except Exception as e:
+            book_log["status"] = "error"
+            book_log["details"] = f"Ошибка копирования: {str(e)}"
+            errors.append(f"Ошибка {book.get('title')}: {str(e)}")
+            detailed_log.append(book_log)
+            continue
+        
+        # Удаляем оригинал после успешного копирования
+        try:
+            os.remove(source_file)
+            deleted_originals += 1
+        except Exception as e:
+            book_log["details"] += f" | Оригинал не удалён: {str(e)}"
         
         # Переносим обложку
         cover_path = book.get("cover_path", "")
@@ -969,13 +997,12 @@ async def transfer_source(
             try:
                 shutil.copy2(cover_path, target_cover)
                 book["cover_path"] = target_cover
-                # Удаляем оригинал обложки
                 try:
                     os.remove(cover_path)
                 except:
                     pass
-            except:
-                pass
+            except Exception as e:
+                book_log["details"] += f" | Обложка не скопирована: {str(e)}"
         
         # Переносим метаданные .json если есть
         if source_file:
@@ -984,16 +1011,18 @@ async def transfer_source(
                 target_json = os.path.splitext(target_file)[0] + ".json"
                 try:
                     shutil.copy2(json_path, target_json)
-                    # Удаляем оригинал .json
                     try:
                         os.remove(json_path)
                     except:
                         pass
-                except:
-                    pass
+                except Exception as e:
+                    book_log["details"] += f" | JSON не скопирован: {str(e)}"
         
         transferred += 1
         successful_book_ids.append(book_row["id"])
+        book_log["status"] = "success"
+        book_log["details"] = f"Перенесён в {target_file}"
+        detailed_log.append(book_log)
     
     if transferred == 0:
         return {"success": False, "message": "Не удалось перенести ни одной книги"}
@@ -1074,7 +1103,10 @@ async def transfer_source(
         "message": f"Перенесено {transferred} книг, удалено оригиналов: {deleted_originals}",
         "new_source_id": new_source_id if is_new_target else target_source_id,
         "transferred_count": transferred,
+        "deleted_originals": deleted_originals,
+        "errors_count": len(errors),
         "errors": errors,
+        "detailed_log": detailed_log,
     }
 
 
