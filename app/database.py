@@ -999,8 +999,9 @@ async def transfer_source(
                 book["cover_path"] = target_cover
                 try:
                     os.remove(cover_path)
-                except:
-                    pass
+                    deleted_originals += 1
+                except Exception as e:
+                    book_log["details"] += f" | Обложка не удалена: {str(e)}"
             except Exception as e:
                 book_log["details"] += f" | Обложка не скопирована: {str(e)}"
         
@@ -1013,10 +1014,26 @@ async def transfer_source(
                     shutil.copy2(json_path, target_json)
                     try:
                         os.remove(json_path)
-                    except:
-                        pass
+                        deleted_originals += 1
+                    except Exception as e:
+                        book_log["details"] += f" | JSON не удалён: {str(e)}"
                 except Exception as e:
                     book_log["details"] += f" | JSON не скопирован: {str(e)}"
+        
+        # Переносим .txt метаданные если есть
+        if source_file:
+            txt_path = os.path.splitext(source_file)[0] + ".txt"
+            if os.path.exists(txt_path):
+                target_txt = os.path.splitext(target_file)[0] + ".txt"
+                try:
+                    shutil.copy2(txt_path, target_txt)
+                    try:
+                        os.remove(txt_path)
+                        deleted_originals += 1
+                    except Exception as e:
+                        book_log["details"] += f" | TXT не удалён: {str(e)}"
+                except Exception as e:
+                    book_log["details"] += f" | TXT не скопирован: {str(e)}"
         
         transferred += 1
         successful_book_ids.append(book_row["id"])
