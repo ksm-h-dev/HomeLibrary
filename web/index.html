@@ -24,9 +24,9 @@
         .nav-tabs button.active { background: #3498db; color: white; }
         
         .stats { display: flex; gap: 20px; margin-bottom: 20px; flex-wrap: wrap; }
-        .stat-card { background: white; padding: 15px 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .stat-card .value { font-size: 24px; font-weight: bold; color: #3498db; }
-        .stat-card .label { color: #666; font-size: 14px; }
+        .stat-card { background: white; padding: 15px 25px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: center; }
+        .stat-card .value { font-size: 24px; font-weight: bold; color: #3498db; text-align: center; display: block; }
+        .stat-card .label { color: #666; font-size: 14px; text-align: center; display: block; }
         
         .search-box { display: flex; gap: 10px; margin-bottom: 20px; }
         .search-box input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; }
@@ -63,6 +63,10 @@
         .modal-overlay.active { display: flex; align-items: center; justify-content: center; }
         .modal { display: none; background: white; padding: 25px; border-radius: 8px; width: 90%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
         .modal-overlay.active .modal { display: block; }
+        
+        /* Log modal specific styles */
+        #logModal .modal { max-width: 1400px; width: 98vw; max-height: 95vh; height: 95vh; display: flex; flex-direction: column; box-sizing: border-box; position: relative; }
+        #logContent { flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; min-height: 200px; height: 100%; }
         .modal h2 { margin-top: 0; color: #2c3e50; }
         .modal .form-group { margin-bottom: 15px; }
         .modal .form-group label { display: block; margin-bottom: 5px; font-size: 13px; color: #666; }
@@ -909,7 +913,7 @@
                         </div>
                         <div class="actions">
                             <button class="edit-btn" onclick="editSource(${source.id})" title="Редактировать">&#9998;</button>
-                            <button class="scan-btn" onclick="scanSource(${source.id})">Сканировать</button>
+                            <button class="scan-btn" onclick="scanSource(${source.id}, '${source.name}')">Сканировать</button>
                             <button class="delete-btn" onclick="deleteSource(${source.id})">Удалить</button>
                         </div>
                     `;
@@ -1003,17 +1007,82 @@
             document.getElementById('sourceType').value = 'hdd';
         }
         
-        async function scanSource(sourceId) {
-            if (!confirm('Начать сканирование хранилища? Это может занять некоторое время.\n\nПри повторном сканировании существующие книги будут обновлены.')) return;
+        let pendingScanSourceId = null;
+
+async function scanSource(sourceId, sourceName) {
+    pendingScanSourceId = sourceId;
+    // Reset modal content to initial state
+    const contentDiv = document.getElementById('scanConfirmContent');
+    if (!contentDiv) {
+        // If modal doesn't exist, create it (fallback)
+        console.error('scanConfirmContent not found');
+        return;
+    }
+    contentDiv.innerHTML = `
+        <p id="scanConfirmMessage">Начать сканирование хранилища "${sourceName}"? Это может занять некоторое время.</p>
+        <div class="buttons" id="scanConfirmButtons">
+            <button class="cancel-btn" onclick="cancelScan()">Отмена</button>
+            <button class="save-btn" onclick="confirmScan()">Да</button>
+        </div>
+    `;
+    document.getElementById('scanConfirmModal').classList.add('active');
+}
+
+function confirmScan() {
+    if (!pendingScanSourceId) return;
+    
+    const sourceId = pendingScanSourceId;
+    pendingScanSourceId = null;
+    
+    // Show scanning state
+    const contentDiv = document.getElementById('scanConfirmContent');
+    contentDiv.innerHTML = `
+        <p><strong>Сканирование выполняется...</strong></p>
+        <div class="transfer-progress">
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 100%; background: linear-gradient(90deg, #3498db, #2980b9); animation: pulse 1.5s infinite;"></div>
+            </div>
+        </div>
+    `;
+    
+    (async () => {
+        try {
+            const res = await fetch(`/api/sources/${sourceId}/scan`, {method: 'POST'});
+            const data = await res.json();
             
-            try {
-                const res = await fetch(`/api/sources/${sourceId}/scan`, {method: 'POST'});
-                const data = await res.json();
-                alert(`Сканирование завершено!\n\nНовых: ${data.imported}\nОбновлено: ${data.updated}\nПропущено: ${data.skipped}`);
-                loadSources();
-                loadStats();
-            } catch (e) { console.error(e); }
+            // Show results
+            contentDiv.innerHTML = `
+                <p><strong>Сканирование завершено!</strong></p>
+                <p>Новых: ${data.imported}</p>
+                <p>Обновлено: ${data.updated}</p>
+                <p>Пропущено: ${data.skipped}</p>
+                <div class="buttons" style="margin-top: 20px;">
+                    <button class="save-btn" onclick="closeScanModal()">Закрыть</button>
+                </div>
+            `;
+            
+            loadSources();
+            loadStats();
+        } catch (e) {
+            contentDiv.innerHTML = `
+                <p style="color: #e74c3c;"><strong>Ошибка при сканировании:</strong> ${e.message}</p>
+                <div class="buttons" style="margin-top: 20px;">
+                    <button class="cancel-btn" onclick="closeScanModal()">Закрыть</button>
+                </div>
+            `;
+            console.error(e);
         }
+    })();
+}
+
+function cancelScan() {
+    pendingScanSourceId = null;
+    document.getElementById('scanConfirmModal').classList.remove('active');
+}
+
+function closeScanModal() {
+    document.getElementById('scanConfirmModal').classList.remove('active');
+}
         
         async function deleteSource(sourceId) {
             if (!confirm('Удалить хранилище и все связанные книги из базы данных?')) return;
@@ -1534,6 +1603,80 @@
                 loadBooks();
             }
         });
+        
+        function openLogModal() {
+            document.getElementById('logModal').classList.add('active');
+            loadLog();
+        }
+        
+        function closeLogModal() {
+            document.getElementById('logModal').classList.remove('active');
+        }
+        
+        function colorizeLog(text) {
+            return text.split('\n').map(line => {
+                if (line.includes('ERROR:')) {
+                    return '<span style="color: #ff0000;">' + line + '</span>';
+                } else if (line.includes('WARNING:')) {
+                    return '<span style="color: #ff8800;">' + line + '</span>';
+                } else if (line.includes('INFO:')) {
+                    return '<span style="color: #ffff00;">' + line + '</span>';
+                }
+                return line;
+            }).join('\n');
+        }
+        
+        async function loadLog() {
+            const lines = document.getElementById('logLines').value;
+            const logContent = document.getElementById('logContent');
+            logContent.innerHTML = 'Загрузка...';
+            
+            try {
+                const res = await fetch(`/api/logs?lines=${lines}`);
+                if (!res.ok) {
+                    const text = await res.text();
+                    throw new Error(text || `HTTP ${res.status}`);
+                }
+                const text = await res.text();
+                logContent.innerHTML = text ? colorizeLog(text) : 'Лог пуст';
+            } catch (e) {
+                logContent.innerHTML = '<span style="color: #ff0000;">Ошибка загрузки: ' + e.message + '</span>';
+            }
+        }
     </script>
+
+<div id="logModal" class="modal-overlay">
+    <div class="modal" style="max-width: 1400px; width: 98vw; max-height: 95vh; height: 95vh; display: flex; flex-direction: column; box-sizing: border-box; position: relative;">
+        <h2>Лог приложения</h2>
+        <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center;">
+            <label style="font-size: 13px; color: #666;">Строк:</label>
+            <select id="logLines" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;" onchange="loadLog()">
+                <option value="100">100</option>
+                <option value="200" selected>200</option>
+                <option value="500">500</option>
+                <option value="1000">1000</option>
+            </select>
+            <button onclick="loadLog()" style="padding: 5px 15px; background: #3498db; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">Обновить</button>
+        </div>
+        <div id="logContent" style="flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; min-height: 200px; height: 100%;"></div>
+        <div class="buttons" style="margin-top: 15px;">
+            <button class="cancel-btn" onclick="closeLogModal()">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<div id="scanConfirmModal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px; width: 90%;">
+        <h2>Домашний библиотекарь</h2>
+        <div id="scanConfirmContent">
+            <p id="scanConfirmMessage"></p>
+            <div class="buttons" id="scanConfirmButtons">
+                <button class="cancel-btn" onclick="cancelScan()">Отмена</button>
+                <button class="save-btn" onclick="confirmScan()">Да</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>

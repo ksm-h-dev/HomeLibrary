@@ -5,6 +5,7 @@ import aiosqlite
 import os
 import subprocess
 import platform
+import logging
 
 from app.database import (
     get_db,
@@ -18,6 +19,8 @@ from app.database import (
 )
 from app.models import BookResponse, BookListResponse, BookUpdate, CategoryResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/books", tags=["books"])
 
 
@@ -29,8 +32,8 @@ async def list_books(
     format: Optional[str] = None,
     year: Optional[int] = None,
     source_id: Optional[int] = None,
-    sort_by: Optional[str] = Query("date", regex="^(date|title|author|year|pages)$"),
-    availability: Optional[str] = Query(None, regex="^(available|missing|new)$"),
+    sort_by: Optional[str] = Query("date", pattern="^(date|title|author|year|pages)$"),
+    availability: Optional[str] = Query(None, pattern="^(available|missing|new)$"),
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Получение списка книг с фильтрацией.
@@ -67,25 +70,22 @@ async def update_book_endpoint(
 ):
     existing = await get_book_by_id(db, book_id)
     if not existing:
+        logger.error("Book not found for update: %s", book_id)
         raise HTTPException(status_code=404, detail="Book not found")
-
-    old_category_id = existing.get("category_id")
-    update_data = book.model_dump(exclude_none=True)
-    new_category_id = update_data.get("category_id")
-
+    
+    update_data = book.model_dump(exclude_unset=True, exclude_none=True)
+    logger.info("Updating book ID %s: %s", book_id, update_data)
+    
+    if "relative_path" in update_data or "category_id" in update_data:
+        await export_book_to_json(db, existing, update_data)
+        logger.info("Exported metadata to JSON for book ID %s", book_id)
+    
+    if "relative_path" in update_data:
+        await move_book_files(existing, update_data)
+        logger.info("Moved book files for book ID %s", book_id)
+    
     await update_book(db, book_id, update_data)
-
-    if new_category_id is not None and new_category_id != old_category_id:
-        move_result = await move_book_files(db, book_id, new_category_id)
-        if move_result.get("success"):
-            await db.execute(
-                "UPDATE books SET file_path = ?, relative_path = ? WHERE id = ?",
-                (move_result["new_path"], move_result["new_relative_path"], book_id),
-            )
-            await db.commit()
-
-    await export_book_to_json(db, book_id)
-
+    logger.info("Book ID %s updated successfully", book_id)
     return await get_book_by_id(db, book_id)
 
 
@@ -115,5 +115,7 @@ async def open_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
 @router.post("/cleanup")
 async def cleanup_unavailable(db: aiosqlite.Connection = Depends(get_db)):
     """Удаляет все недоступные книги из базы."""
+    logger.warning("Starting cleanup of unavailable books")
     count = await cleanup_unavailable_books(db)
+    logger.info("Cleanup completed: %s books deleted", count)
     return {"deleted": count, "message": f"Удалено {count} недоступных книг"}

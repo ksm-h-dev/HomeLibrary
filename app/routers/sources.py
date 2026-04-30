@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 import aiosqlite
 import os
+import logging
 
 from app.database import (
     get_db,
@@ -24,6 +25,8 @@ from app.models import (
     DiscoveredDrive,
 )
 from services.drives import discover_drives
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
@@ -95,14 +98,17 @@ async def check_source_status(
 async def remove_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)):
     existing = await get_source_by_id(db, source_id)
     if not existing:
+        logger.error("Source not found for deletion: %s", source_id)
         raise HTTPException(status_code=404, detail="Source not found")
-
+    
     # Получаем количество книг перед удалением
     books_count = existing.get("books_count", 0)
     source_name = existing.get("name", "")
-
+    logger.warning("Deleting source '%s' (ID: %s) with %s books", source_name, source_id, books_count)
+    
     await delete_source(db, source_id)
-
+    logger.info("Source '%s' (ID: %s) deleted successfully", source_name, source_id)
+    
     return {
         "message": f"Source '{source_name}' and {books_count} associated books deleted successfully",
         "source_id": source_id,
@@ -129,19 +135,24 @@ async def get_source_books(
 @router.post("/{source_id}/scan")
 async def scan_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)):
     from services.importer import import_from_source
-
+    
     source = await get_source_by_id(db, source_id)
     if not source:
+        logger.error("Source not found: %s", source_id)
         raise HTTPException(status_code=404, detail="Source not found")
-
+    
     directory = source.get("path", "")
     if not directory or not os.path.exists(directory):
+        logger.error("Source path does not exist: %s", directory)
         raise HTTPException(
             status_code=400, detail=f"Source path does not exist: {directory}"
         )
-
+    
+    logger.info("Starting scan for source '%s' (ID: %s), path: %s", source['name'], source_id, directory)
     result = await import_from_source(source_id, directory)
-
+    logger.info("Scan completed for source '%s': imported=%s, confirmed=%s, missing=%s", 
+                 source['name'], result.get('imported', 0), result.get('confirmed', 0), result.get('missing', 0))
+    
     return {
         "message": f"Scan completed for {source['name']}: {result.get('covers_found', 0)} обложек найдено",
         "source_id": result.get("source_id"),
@@ -171,9 +182,13 @@ async def transfer_source(
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """Переносит хранилище в новое место."""
+    logger.warning("Starting transfer of source ID %s to path: %s", source_id, target_path)
     result = await db_transfer_source(
         db, source_id, target_path, target_source_id, conflict_callback=None
     )
     if not result.get("success"):
+        logger.error("Transfer failed for source ID %s: %s", source_id, result.get("message"))
         raise HTTPException(status_code=400, detail=result.get("message"))
+    logger.info("Transfer completed for source ID %s: %s books transferred", 
+                 source_id, result.get("books_transferred", 0))
     return result

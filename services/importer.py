@@ -1,8 +1,11 @@
 import os
 import re
 import aiosqlite
+import logging
 from pathlib import Path
 from config import BOOKS_DIR, SUPPORTED_FORMATS, COVER_EXTENSIONS
+
+logger = logging.getLogger(__name__)
 
 
 def parse_size_string(size_str: str) -> int:
@@ -322,8 +325,9 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         }
         source_id = await upsert_source_by_identifier(db, source_data)
         try:
-            print(
-                f"Source created/found: id={source_id}, catalog_id={catalog_id}, volume_label={volume_label}"
+            logger.info(
+                "Source created/found: id=%s, catalog_id=%s, volume_label=%s",
+                source_id, catalog_id, volume_label
             )
         except UnicodeEncodeError:
             pass
@@ -345,13 +349,15 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
 
     # Сброс устаревших флагов is_new_arrival (старше 7 дней)
     await reset_stale_new_arrivals(db, source_id)
-
+    
+    logger.info("Starting import_from_source for source_id=%s, directory=%s", source_id, directory)
     books = await scan_directory(directory, source_id)
     scanned = len(books)
     imported = 0
     confirmed = 0
     covers_found = 0
-
+    logger.info("Scanned %s books in directory: %s", scanned, directory)
+    
     found_paths = []
 
     for book in books:
@@ -379,13 +385,16 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
             new_cover_ext = await new_cover.fetchone()
             if old_cover_ext and not old_cover_ext[0] and new_cover_ext and new_cover_ext[0]:
                 covers_found += 1
+                logger.info("Cover found for existing book ID %s", book_id)
             
             confirmed += 1
+            logger.debug("Confirmed book ID %s: %s", book_id, book.get("title", ""))
         else:
             # Новая книга - добавляем с флагом is_new_arrival=1
             book_id, is_new = await upsert_book_preserve(db, book)
             if is_new:
                 imported += 1
+                logger.info("Imported new book: %s (ID: %s)", book.get("title", ""), book_id)
             confirmed += 1
 
 # Получаем все книги хранилища из БД для поиска отсутствующих
@@ -423,10 +432,13 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         (total_size, source_id)
     )
     await db.commit()
-
+    
     await db.close()
-    print(f"\nImport complete: {imported} new, {confirmed} confirmed, {covers_found} covers found, {missing} missing, total_size={total_size}")
-
+    logger.info(
+        "Import complete for source_id=%s: imported=%s, confirmed=%s, covers=%s, missing=%s, total_size=%s",
+        source_id, imported, confirmed, covers_found, missing, total_size
+    )
+    
     return {
         "source_id": source_id,
         "scanned": scanned,
