@@ -1678,10 +1678,14 @@
                 var data = await res.json();
                 document.getElementById('openAuditLogBtn').style.display = data.audit_enabled ? 'inline-block' : 'none';
                 if (data.audit_enabled) {
-                    showNotification('Аудит включён. Записи пишутся в audit.log');
+                    showNotification('Аудит включён. Записи пишутся в audit.log. Сервер перезагружается...');
                 } else {
-                    showNotification('Аудит отключён');
+                    showNotification('Аудит отключён. Сервер перезагружается...');
                 }
+                // Wait for server to restart and reload page
+                setTimeout(() => {
+                    window.location.reload();
+                }, 3000);
             } catch (e) {
                 showNotification('Ошибка: ' + e);
                 document.getElementById('auditToggle').checked = !enabled;

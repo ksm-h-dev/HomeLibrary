@@ -177,6 +177,16 @@ async def get_logs(lines: int = 200):
         return PlainTextResponse(f"Ошибка: {str(e)}")
 
 
+def restart_server():
+    """Restart the server by spawning a new process and exiting."""
+    import sys
+    import subprocess
+    logger.info("Restarting server...")
+    subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app",
+                      "--host", SERVER_HOST, "--port", str(SERVER_PORT), "--reload"])
+    sys.exit(0)
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT)
