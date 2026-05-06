@@ -1591,10 +1591,12 @@
 
         let logAutoRefreshInterval = null;
         let logAutoScrollEnabled = true;
+        let currentLogType = 'app'; // 'app' or 'audit'
 
         function openLogModal() {
             document.getElementById('logModal').classList.add('active');
-            loadLog();
+            // Set default to app log when opening
+            switchLogType('app');
         }
 
         function closeLogModal() {
@@ -1624,7 +1626,8 @@
             logContent.innerHTML = 'Загрузка...';
 
             try {
-                const res = await fetch('/api/logs?lines=' + lines);
+                const endpoint = currentLogType === 'audit' ? '/api/audit-log' : '/api/logs';
+                const res = await fetch(endpoint + '?lines=' + lines);
                 if (!res.ok) {
                     const text = await res.text();
                     throw new Error(text || 'HTTP ' + res.status);
@@ -1638,6 +1641,14 @@
             } catch (e) {
                 logContent.innerHTML = '<span style="color: #ff0000;">Ошибка загрузки: ' + e.message + '</span>';
             }
+        }
+
+        function switchLogType(type) {
+            currentLogType = type;
+            document.getElementById('logModalTitle').textContent = type === 'audit' ? 'Аудит лог' : 'Лог приложения';
+            document.getElementById('logTypeAppBtn').style.background = type === 'app' ? '#27ae60' : '#95a5a6';
+            document.getElementById('logTypeAuditBtn').style.background = type === 'audit' ? '#27ae60' : '#95a5a6';
+            loadLog();
         }
 
         function toggleLogAutoRefresh() {
@@ -1727,8 +1738,10 @@
 
 <div id="logModal" class="modal-overlay">
     <div class="modal" style="max-width: 1400px; width: 98vw; max-height: 95vh; height: 95vh; display: flex; flex-direction: column; box-sizing: border-box; position: relative;">
-        <h2>Лог приложения</h2>
+        <h2 id="logModalTitle">Лог приложения</h2>
         <div style="margin-bottom: 10px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <button id="logTypeAppBtn" onclick="switchLogType('app')" style="padding: 5px 15px; background: #27ae60; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">Стандартный лог</button>
+            <button id="logTypeAuditBtn" onclick="switchLogType('audit')" style="padding: 5px 15px; background: #95a5a6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px;">Аудит лог</button>
             <label style="font-size: 13px; color: #666;">Строк:</label>
             <select id="logLines" style="padding: 5px; border: 1px solid #ddd; border-radius: 4px;" onchange="loadLog()">
                 <option value="100">100</option>
