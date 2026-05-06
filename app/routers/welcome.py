@@ -233,7 +233,7 @@ async def perform_initial_scan(
 @router.post("/skip")
 async def skip_setup():
     """Skip initial setup - will have empty library"""
-    return {"success": True, "message": "Setup skipped. You can add sources later."}
+    return {"success": True, "message": "Настройка пропущена. Вы можете добавить хранилища позже."}
 
 
 @router.post("/initialize")
@@ -275,7 +275,7 @@ async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
 
         return {
             "success": True,
-            "message": "Library initialized successfully",
+            "message": "Библиотека успешно инициализирована",
             "books_deleted": books_count,
             "sources_deleted": sources_count,
         }

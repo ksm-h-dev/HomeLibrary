@@ -348,6 +348,10 @@ async def import_from_source(
     covers_found = 0
     logger.info("Scanned %s books in directory: %s", scanned, directory)
 
+    # Debug: log first 3 books to see structure
+    for i, book in enumerate(books[:3]):
+        logger.info("Book %s: title='%s', cover_ext='%s', path='%s'", i, book.get('title', ''), book.get('cover_ext', ''), book.get('relative_path', ''))
+
     if progress_callback:
         await progress_callback({
             "event": "start",
@@ -397,10 +401,15 @@ async def import_from_source(
             if is_new:
                 imported += 1
                 logger.info("Imported new book: %s (ID: %s)", book.get("title", ""), book_id)
+                if book.get("cover_ext"):
+                    covers_found += 1
+                    logger.info("Cover found for new book ID %s", book_id)
             confirmed += 1
 
         if progress_callback and files_since_callback >= 10:
             files_since_callback = 0
+            logger.debug("Progress: processed=%s, imported=%s, confirmed=%s, covers=%s",
+                        len(found_paths), imported, confirmed, covers_found)
             await progress_callback({
                 "event": "update",
                 "total_files": scanned,
@@ -459,9 +468,11 @@ async def import_from_source(
 
     await db.close()
     logger.info(
-        "Import complete for source_id=%s: imported=%s, confirmed=%s, covers=%s, missing=%s, total_size=%s",
-        source_id, imported, confirmed, covers_found, missing, total_size
+        "Import complete for source_id=%s: scanned=%s, imported=%s, confirmed=%s, covers=%s, missing=%s, total_size=%s",
+        source_id, scanned, imported, confirmed, covers_found, missing, total_size
     )
+    logger.info("DEBUG FINAL: scanned=%s, imported=%s, confirmed=%s, covers_found=%s",
+                scanned, imported, confirmed, covers_found)
 
     return {
         "source_id": source_id,

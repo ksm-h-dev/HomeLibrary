@@ -132,7 +132,7 @@ async def open_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
     else:
         subprocess.run(["xdg-open", file_path])
 
-    return {"success": True, "message": "File opened"}
+    return {"success": True, "message": "Файл открыт"}
 
 
 @router.post("/cleanup")

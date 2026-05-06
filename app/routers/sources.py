@@ -127,10 +127,10 @@ async def remove_source(source_id: int, db: aiosqlite.Connection = Depends(get_d
 
     books_count = existing.get("books_count", 0)
     source_name = existing.get("name", "")
-    logger.warning("Deleting source '%s' (ID: %s) with %s books", source_name, source_id, books_count)
+    logger.warning("Удаление хранилища '%s' (ID: %s) с %s книгами", source_name, source_id, books_count)
 
     await delete_source(db, source_id)
-    logger.info("Source '%s' (ID: %s) deleted successfully", source_name, source_id)
+    logger.info("Хранилище '%s' (ID: %s) успешно удалено", source_name, source_id)
 
     log_audit(
         "source_deleted",
@@ -145,7 +145,7 @@ async def remove_source(source_id: int, db: aiosqlite.Connection = Depends(get_d
     )
 
     return {
-        "message": f"Source '{source_name}' and {books_count} associated books deleted successfully",
+        "message": f"Хранилище '{source_name}' и {books_count} связанных книг успешно удалены",
         "source_id": source_id,
         "source_name": source_name,
         "books_deleted": books_count,
@@ -213,7 +213,7 @@ async def scan_source(source_id: int, db: aiosqlite.Connection = Depends(get_db)
     )
 
     return {
-        "message": f"Scan completed for {source_name}: {result.get('covers_found', 0)} обложек найдено",
+        "message": f"Сканирование хранилища '{source_name}' завершено: найдено {result.get('covers_found', 0)} обложек",
         "source_id": result.get("source_id"),
         "scanned": result.get("scanned", 0),
         "imported": result.get("imported", 0),
@@ -259,6 +259,9 @@ async def scan_source_stream(source_id: int, db: aiosqlite.Connection = Depends(
                 source_id,
                 missing=stats.get("missing", 0),
                 missing_books=stats.get("missing_books", []),
+                imported=stats.get("imported", 0),
+                confirmed=stats.get("confirmed", 0),
+                covers_found=stats.get("covers_found", 0),
             )
 
     await tracker.start(source_id, source["name"], total_files)
@@ -277,6 +280,9 @@ async def scan_source_stream(source_id: int, db: aiosqlite.Connection = Depends(
                 source_id,
                 missing=result.get("missing", 0),
                 missing_books=result.get("missing_books", []),
+                imported=result.get("imported", 0),
+                confirmed=result.get("confirmed", 0),
+                covers_found=result.get("covers_found", 0),
             )
             log_audit(
                 "source_scan_complete",

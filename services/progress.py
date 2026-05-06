@@ -78,9 +78,9 @@ class ScanProgressTracker:
             if not p:
                 return
             p.processed = processed
-            p.imported += imported
-            p.confirmed += confirmed
-            p.covers_found += covers_found
+            p.imported = imported  # Replace, not accumulate
+            p.confirmed = confirmed  # Replace, not accumulate
+            p.covers_found = covers_found  # Replace, not accumulate
             p.current_file = current_file
             if status:
                 p.status = status
@@ -88,13 +88,17 @@ class ScanProgressTracker:
                 p.logs.append(log_message)
             await self._queues[source_id].put({"event": "update", "data": p.to_dict()})
 
-    async def complete(self, source_id: int, missing: int = 0, missing_books: list | None = None):
+    async def complete(self, source_id: int, missing: int = 0, missing_books: list | None = None,
+                        imported: int = 0, confirmed: int = 0, covers_found: int = 0):
         async with self._lock:
             p = self._progress.get(source_id)
             if not p:
                 return
             p.status = "complete"
             p.processed = p.total_files
+            p.imported = imported  # Set final values
+            p.confirmed = confirmed
+            p.covers_found = covers_found
             p.missing = missing
             p.missing_books = missing_books or []
             await self._queues[source_id].put({"event": "complete", "data": p.to_dict()})

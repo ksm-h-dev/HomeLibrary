@@ -942,7 +942,7 @@
                 }
             } catch (e) {
                 console.error(e);
-                alert('Ошибка выбора папки');
+                showMessageModal('Ошибка', 'Ошибка выбора папки');
             }
         }
 
@@ -952,7 +952,7 @@
             const path = document.getElementById('sourcePath').value.trim();
 
             if (!name || !path) {
-                alert('Введите название и путь к хранилищу');
+                showMessageModal('Ошибка', 'Введите название и путь к хранилищу');
                 return;
             }
 
@@ -1098,16 +1098,18 @@
         }
 
         async function deleteSource(sourceId) {
-            if (!confirm('Удалить хранилище и все связанные книги из базы данных?')) return;
+            showConfirmModal('Удаление хранилища', 'Удалить хранилище и все связанные книги из базы данных?', async (result) => {
+                if (!result) return;
 
-            try {
-                const res = await fetch('/api/sources/' + sourceId, {method: 'DELETE'});
-                const data = await res.json();
-                alert(data.message || 'Хранилище удалено');
-                loadSources();
-                loadStats();
-                loadBooks();
-            } catch (e) { console.error(e); }
+                try {
+                    const res = await fetch('/api/sources/' + sourceId, {method: 'DELETE'});
+                    const data = await res.json();
+                    showMessageModal('Успех', data.message || 'Хранилище удалено');
+                    loadSources();
+                    loadStats();
+                    loadBooks();
+                } catch (e) { console.error(e); }
+            });
         }
 
         let editingSourceId = null;
@@ -1117,7 +1119,7 @@
                 console.log('editSource called, id:', sourceId);
                 const res = await fetch('/api/sources/' + sourceId);
                 if (!res.ok) {
-                    alert('Ошибка загрузки хранилища: ' + res.status);
+                    showMessageModal('Ошибка', 'Ошибка загрузки хранилища: ' + res.status);
                     return;
                 }
                 const source = await res.json();
@@ -1134,7 +1136,7 @@
                 console.log('modal classes after add:', modal.className);
             } catch (e) {
                 console.error(e);
-                alert('Ошибка при загрузке данных хранилища: ' + e.message);
+                showMessageModal('Ошибка', 'Ошибка при загрузке данных хранилища: ' + e.message);
             }
         }
 
@@ -1162,7 +1164,7 @@
 
                 if (!res.ok) {
                     const err = await res.json();
-                    alert(err.detail || 'Ошибка сохранения');
+                    showMessageModal('Ошибка', err.detail || 'Ошибка сохранения');
                     return;
                 }
 
@@ -1171,7 +1173,7 @@
                 loadStats();
             } catch (e) {
                 console.error(e);
-                alert('Ошибка сохранения');
+                showMessageModal('Ошибка', 'Ошибка сохранения');
             }
         }
 
@@ -1180,11 +1182,11 @@
                 const res = await fetch('/api/books/' + bookId + '/open', {method: 'POST'});
                 if (!res.ok) {
                     const err = await res.json();
-                    alert(err.detail || 'Не удалось открыть файл');
+                    showMessageModal('Ошибка', err.detail || 'Не удалось открыть файл');
                 }
             } catch (e) {
                 console.error(e);
-                alert('Ошибка при открытии файла');
+                showMessageModal('Ошибка', 'Ошибка при открытии файла');
             }
         }
 
@@ -1195,7 +1197,7 @@
                 console.log('editBook called with id:', bookId);
                 const res = await fetch('/api/books/' + bookId);
                 if (!res.ok) {
-                    alert('Ошибка загрузки книги: ' + res.status);
+                    showMessageModal('Ошибка', 'Ошибка загрузки книги: ' + res.status);
                     return;
                 }
                 const book = await res.json();
@@ -1218,7 +1220,7 @@
                 console.log('Modal classes after add:', modal.className);
             } catch (e) {
                 console.error(e);
-                alert('Ошибка при загрузке данных книги: ' + e.message);
+                showMessageModal('Ошибка', 'Ошибка при загрузке данных книги: ' + e.message);
             }
         }
 
@@ -1246,35 +1248,41 @@
         }
 
         async function cleanupDatabase() {
-            if (!confirm('Удалить все недоступные книги из базы данных?')) return;
+            showConfirmModal('Очистка базы данных', 'Удалить все недоступные книги из базы данных?', async (result) => {
+                if (!result) return;
 
-            try {
-                const res = await fetch('/api/books/cleanup', { method: 'POST' });
-                const data = await res.json();
-                alert(data.message);
-                loadBooks();
-                loadStats();
-            } catch (e) {
-                console.error(e);
-                alert('Ошибка при очистке');
-            }
+                try {
+                    const res = await fetch('/api/books/cleanup', { method: 'POST' });
+                    const data = await res.json();
+                    showMessageModal('Результат', data.message);
+                    loadBooks();
+                    loadStats();
+                } catch (e) {
+                    console.error(e);
+                    showMessageModal('Ошибка', 'Ошибка при очистке');
+                }
+            });
         }
 
         async function initDatabase() {
-            if (!confirm('Стереть всю базу данных? Все книги и хранилища будут удалены!')) return;
-            if (!confirm('Вы уверены? Это действие необратимо.')) return;
+            showConfirmModal('Инициализация базы данных', 'Стереть всю базу данных? Все книги и хранилища будут удалены!', (result1) => {
+                if (!result1) return;
+                showConfirmModal('Подтверждение', 'Вы уверены? Это действие необратимо.', async (result2) => {
+                    if (!result2) return;
 
-            try {
-                const res = await fetch('/api/setup/initialize', { method: 'POST' });
-                const data = await res.json();
-                alert(data.message + '\nУдалено книг: ' + data.books_deleted + '\nУдалено хранилищ: ' + data.sources_deleted);
-                loadBooks();
-                loadStats();
-                loadSources();
-            } catch (e) {
-                console.error(e);
-                alert('Ошибка при инициализации');
-            }
+                    try {
+                        const res = await fetch('/api/setup/initialize', { method: 'POST' });
+                        const data = await res.json();
+                        showMessageModal('Результат', data.message + '\nУдалено книг: ' + data.books_deleted + '\nУдалено хранилищ: ' + data.sources_deleted);
+                        loadBooks();
+                        loadStats();
+                        loadSources();
+                    } catch (e) {
+                        console.error(e);
+                        showMessageModal('Ошибка', 'Ошибка при инициализации');
+                    }
+                });
+            });
         }
 
         async function saveBook() {
@@ -1302,7 +1310,7 @@
 
                 if (!res.ok) {
                     const err = await res.json();
-                    alert(err.detail || 'Ошибка сохранения');
+                    showMessageModal('Ошибка', err.detail || 'Ошибка сохранения');
                     return;
                 }
 
@@ -1311,7 +1319,7 @@
                 loadStats();
             } catch (e) {
                 console.error(e);
-                alert('Ошибка сохранения');
+                showMessageModal('Ошибка', 'Ошибка сохранения');
             }
         }
 
@@ -1397,10 +1405,10 @@
                     });
 
                     document.getElementById('currentLibraryPath').textContent = data.selected_path;
-                    alert('Путь обновлен. Изменения вступят в силу после перезапуска.');
+                    showMessageModal('Успех', 'Путь обновлен. Изменения вступят в силу после перезапуска.');
                 }
             } catch (e) {
-                alert('Ошибка: ' + e.message);
+                showMessageModal('Ошибка', 'Ошибка: ' + e.message);
             }
         }
 
@@ -1423,13 +1431,13 @@
 
                 if (data.success) {
                     closeInitLibraryModal();
-                    alert('Библиотека успешно инициализирована!\n\nУдалено:\n- ' + data.books_deleted + ' книг\n- ' + data.sources_deleted + ' хранилищ\n\nСтраница будет перезагружена.');
+                    showMessageModal('Успех', 'Библиотека успешно инициализирована!\n\nУдалено:\n- ' + data.books_deleted + ' книг\n- ' + data.sources_deleted + ' хранилищ\n\nСтраница будет перезагружена.');
                     window.location.reload();
                 } else {
-                    alert('Ошибка: ' + (data.message || 'Неизвестная ошибка'));
+                    showMessageModal('Ошибка', 'Ошибка: ' + (data.message || 'Неизвестная ошибка'));
                 }
             } catch (e) {
-                alert('Ошибка: ' + e.message);
+                showMessageModal('Ошибка', 'Ошибка: ' + e.message);
             }
         }
 
@@ -1513,41 +1521,43 @@
             const targetPath = document.getElementById('transferTargetPath').value;
 
             if (!sourceId || !targetPath) {
-                alert('Выберите хранилище и место переноса');
+                showMessageModal('Ошибка', 'Выберите хранилище и место переноса');
                 return;
             }
 
-            if (!confirm('Начать перенос хранилища?')) return;
+            showConfirmModal('Перенос хранилища', 'Начать перенос хранилища?', async (result) => {
+                if (!result) return;
 
-            document.getElementById('transferProgress').style.display = 'block';
-            document.getElementById('transferButtons').style.display = 'none';
-            document.getElementById('transferInfo').style.display = 'none';
+                document.getElementById('transferProgress').style.display = 'block';
+                document.getElementById('transferButtons').style.display = 'none';
+                document.getElementById('transferInfo').style.display = 'none';
 
-            const progressBar = document.getElementById('transferProgressBar');
-            const currentBook = document.getElementById('transferCurrentBook');
+                const progressBar = document.getElementById('transferProgressBar');
+                const currentBook = document.getElementById('transferCurrentBook');
 
-            try {
-                const res = await fetch('/api/sources/' + sourceId + '/transfer?target_path=' + encodeURIComponent(targetPath), {
-                    method: 'POST'
-                });
-                const data = await res.json();
+                try {
+                    const res = await fetch('/api/sources/' + sourceId + '/transfer?target_path=' + encodeURIComponent(targetPath), {
+                        method: 'POST'
+                    });
+                    const data = await res.json();
 
-                progressBar.style.width = '100%';
+                    progressBar.style.width = '100%';
 
-                if (data.success) {
-                    alert(data.message);
-                    closeTransferModal();
-                    loadSources();
-                } else {
-                    alert('Ошибка: ' + data.message);
+                    if (data.success) {
+                        showMessageModal('Успех', data.message);
+                        closeTransferModal();
+                        loadSources();
+                    } else {
+                        showMessageModal('Ошибка', 'Ошибка: ' + data.message);
+                    }
+                } catch (e) {
+                    console.error(e);
+                    showMessageModal('Ошибка', 'Ошибка при переносе');
+                } finally {
+                    document.getElementById('transferProgress').style.display = 'none';
+                    document.getElementById('transferButtons').style.display = 'block';
                 }
-            } catch (e) {
-                console.error(e);
-                alert('Ошибка при переносе');
-            } finally {
-                document.getElementById('transferProgress').style.display = 'none';
-                document.getElementById('transferButtons').style.display = 'block';
-            }
+            });
         }
 
         async function checkSetup() {
@@ -1681,6 +1691,34 @@
         function openAuditLog() {
             window.open('/api/audit-log?lines=500', '_blank');
         }
+
+        // Message modal functions
+        function showMessageModal(title, message) {
+            document.getElementById('messageModalTitle').textContent = title || 'Сообщение';
+            document.getElementById('messageModalText').textContent = message || '';
+            document.getElementById('messageModal').classList.add('active');
+        }
+
+        function closeMessageModal() {
+            document.getElementById('messageModal').classList.remove('active');
+        }
+
+        // Confirm modal functions
+        let confirmModalCallback = null;
+        function showConfirmModal(title, message, callback) {
+            document.getElementById('confirmModalTitle').textContent = title || 'Подтверждение';
+            document.getElementById('confirmModalText').textContent = message || '';
+            confirmModalCallback = callback;
+            document.getElementById('confirmModal').classList.add('active');
+        }
+
+        function closeConfirmModal(result) {
+            document.getElementById('confirmModal').classList.remove('active');
+            if (confirmModalCallback) {
+                confirmModalCallback(result);
+                confirmModalCallback = null;
+            }
+        }
     </script>
 
 <div id="logModal" class="modal-overlay">
@@ -1701,6 +1739,31 @@
         <div id="logContent" style="flex: 1 1 auto; overflow-y: auto; background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; font-size: 12px; line-height: 1.5; white-space: pre-wrap; min-height: 200px; height: 100%;"></div>
         <div class="buttons" style="margin-top: 15px;">
             <button class="cancel-btn" onclick="closeLogModal()">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<div id="messageModal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px; width: 90%;">
+        <h2 id="messageModalTitle">Сообщение</h2>
+        <div id="messageModalContent">
+            <p id="messageModalText"></p>
+            <div class="buttons" style="justify-content: center;">
+                <button class="save-btn" onclick="closeMessageModal()">OK</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="confirmModal" class="modal-overlay">
+    <div class="modal" style="max-width: 500px; width: 90%;">
+        <h2 id="confirmModalTitle">Подтверждение</h2>
+        <div id="confirmModalContent">
+            <p id="confirmModalText"></p>
+            <div class="buttons" style="justify-content: center;">
+                <button class="cancel-btn" onclick="closeConfirmModal(false)">Отмена</button>
+                <button class="save-btn" onclick="closeConfirmModal(true)">OK</button>
+            </div>
         </div>
     </div>
 </div>
