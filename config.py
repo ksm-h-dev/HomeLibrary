@@ -11,3 +11,5 @@ SHOW_WELCOME = os.getenv("LIBRARY_SHOW_WELCOME", "true")
 SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf"]
 SUPPORTED_METADATA_EXT = ["txt", "json"]
 COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
+
+AUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "false").lower() == "true"

@@ -63,6 +63,19 @@ async def check_initial_setup():
             from services.importer import import_from_source
             result = await import_from_source(None, DEFAULT_SOURCE_PATH)
             logger.info("Auto-import complete: %s", result)
+            from services.audit import log_audit
+            log_audit(
+                "auto_import_complete",
+                {
+                    "path": DEFAULT_SOURCE_PATH,
+                    "source_id": result.get("source_id", 0),
+                    "scanned": result.get("scanned", 0),
+                    "imported": result.get("imported", 0),
+                    "confirmed": result.get("confirmed", 0),
+                    "missing": result.get("missing", 0)
+                },
+                "startup"
+            )
     finally:
         await db.close()
 
@@ -133,6 +146,22 @@ async def static_files(filename: str):
     if os.path.isfile(file_path):
         return FileResponse(file_path)
     raise HTTPException(status_code=404, detail="File not found")
+
+
+AUDIT_LOG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "audit.log")
+
+@app.get("/api/audit-log")
+async def get_audit_log(lines: int = 500):
+    """Get audit log content."""
+    try:
+        if not os.path.exists(AUDIT_LOG_FILE):
+            return PlainTextResponse("Audit log file not found. Enable audit logging in Tools section.")
+        with open(AUDIT_LOG_FILE, 'r', encoding='utf-8') as f:
+            content = f.readlines()
+        last_lines = content[-lines:] if len(content) > lines else content
+        return PlainTextResponse(''.join(last_lines))
+    except Exception as e:
+        return PlainTextResponse(f"Error: {str(e)}")
 
 
 @app.get("/api/logs")

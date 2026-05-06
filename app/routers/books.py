@@ -18,6 +18,7 @@ from app.database import (
     cleanup_unavailable_books,
 )
 from app.models import BookResponse, BookListResponse, BookUpdate, CategoryResponse
+from services.audit import log_audit
 
 logger = logging.getLogger(__name__)
 
@@ -77,15 +78,37 @@ async def update_book_endpoint(
     logger.info("Updating book ID %s: %s", book_id, update_data)
     
     if "relative_path" in update_data or "category_id" in update_data:
-        await export_book_to_json(db, existing, update_data)
+        export_result = await export_book_to_json(db, book_id)
         logger.info("Exported metadata to JSON for book ID %s", book_id)
+        log_audit(
+            "book_exported",
+            {"book_id": book_id, "export_path": export_result.get("path"), "title": existing.get("title")},
+            "api"
+        )
     
-    if "relative_path" in update_data:
-        await move_book_files(existing, update_data)
+    new_cat_id = update_data.get("category_id")
+    if new_cat_id:
+        move_result = await move_book_files(db, book_id, new_cat_id)
         logger.info("Moved book files for book ID %s", book_id)
+        log_audit(
+            "book_files_moved",
+            {
+                "book_id": book_id,
+                "title": existing.get("title"),
+                "old_path": move_result.get("old_path"),
+                "new_path": move_result.get("new_path"),
+                "success": move_result.get("success")
+            },
+            "api"
+        )
     
     await update_book(db, book_id, update_data)
     logger.info("Book ID %s updated successfully", book_id)
+    log_audit(
+        "book_updated",
+        {"book_id": book_id, "title": existing.get("title"), "changes": update_data},
+        "api"
+    )
     return await get_book_by_id(db, book_id)
 
 
@@ -118,4 +141,9 @@ async def cleanup_unavailable(db: aiosqlite.Connection = Depends(get_db)):
     logger.warning("Starting cleanup of unavailable books")
     count = await cleanup_unavailable_books(db)
     logger.info("Cleanup completed: %s books deleted", count)
+    log_audit(
+        "cleanup_unavailable",
+        {"deleted_count": count},
+        "api"
+    )
     return {"deleted": count, "message": f"Удалено {count} недоступных книг"}

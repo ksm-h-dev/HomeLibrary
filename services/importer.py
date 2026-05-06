@@ -67,7 +67,7 @@ async def parse_metadata_file(filepath: str) -> dict:
 
         for line in lines:
             line = line.strip()
-            if not line or line.startswith("���") or len(line) < 3:
+            if not line or line.startswith("") or len(line) < 3:
                 continue
 
             lower_line = line.lower()
@@ -129,7 +129,6 @@ async def parse_metadata_file(filepath: str) -> dict:
 
 def find_metadata_file(book_path: str) -> tuple[str | None, str]:
     base = str(Path(book_path).with_suffix(""))
-    # Handle .part1.rar -> base should be the stem before .part1
     if ".part" in base.lower():
         match = re.match(r"(.+)\.part\d+", base, re.IGNORECASE)
         if match:
@@ -139,18 +138,6 @@ def find_metadata_file(book_path: str) -> tuple[str | None, str]:
         if os.path.exists(meta_file):
             return meta_file, ext
     return None, ""
-
-
-def find_cover_file(book_path: str) -> tuple[str | None, str]:
-    book_dir = Path(book_path).parent
-    if not book_dir.exists():
-        return None, ""
-    # Handle .part1.rar -> base should be the stem before .part1
-    base = Path(book_path).stem
-    if ".part" in base.lower():
-        match = re.match(r"(.+)\.part\d+", base, re.IGNORECASE)
-        if match:
-            base = match.group(1)
 
 
 async def parse_json_metadata_file(filepath: str) -> dict:
@@ -188,22 +175,21 @@ def find_cover_file(book_path: str) -> tuple[str | None, str]:
     book_dir = Path(book_path).parent
     if not book_dir.exists():
         return None, ""
-    
+
     base_stem = Path(book_path).stem
     base_stem = re.sub(r"\.part\d+$", "", base_stem, flags=re.IGNORECASE)
-    
+
     for ext in COVER_EXTENSIONS:
         cover_name = f"{base_stem}.{ext}"
         cover_path = book_dir / cover_name
         if cover_path.exists():
             return str(cover_path), ext
-    
+
     return None, ""
 
 
 def compute_relative_path(root_path: str, file_path: str) -> str:
     rel = os.path.relpath(file_path, root_path)
-    # Handle .part1.rar -> .rar (normalize multi-part archives)
     rel = re.sub(r"\.part\d+(\.[^.]+)$", r"\1", rel, flags=re.IGNORECASE)
     return rel.replace("\\", "/")
 
@@ -231,7 +217,7 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 continue
 
             if ".part" in filename.lower() and not re.match(r".*\.part1\.rar$", filename, re.IGNORECASE):
-                continue  # Skip .part2, .part3 etc, only process .part1
+                continue
 
             book_info = {
                 "file_path": filepath,
@@ -240,9 +226,6 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 "format": ext,
                 "file_size": os.path.getsize(filepath),
             }
-
-            # NOTE: file_path keeps actual path (with .part1) for file existence checks
-            # relative_path is normalized (without .part1) for DB matching
 
             meta_file, meta_ext = find_metadata_file(filepath)
             if meta_file:
@@ -261,7 +244,6 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 book_info["cover_ext"] = cover_ext
 
             if not book_info.get("title"):
-                # Normalize .part1.rar filename for title
                 title_filename = re.sub(r"\.part\d+(\.[^.]+)$", r"\1", filename, flags=re.IGNORECASE)
                 book_info["title"] = (
                     Path(title_filename).stem.replace("_", " ").replace("-", " ")
@@ -275,7 +257,11 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
     return books
 
 
-async def import_from_source(source_id: int, directory: str = None) -> dict:
+async def import_from_source(
+    source_id: int,
+    directory: str = None,
+    progress_callback=None,
+) -> dict:
     """Сканирование хранилища с подтверждением наличия и отслеживанием новых поступлений.
 
     Логика:
@@ -287,6 +273,11 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
        - Новый файл → добавление через upsert_book_preserve (is_new_arrival=1)
     5. Пометка отсутствующих книг (is_available=0)
     6. Обновление времени сканирования хранилища
+
+    Args:
+        source_id: ID хранилища
+        directory: Путь к хранилищу
+        progress_callback: Optional async callable(stats_dict) для отчёта о прогрессе
 
     Returns:
         dict: {"scanned": int, "imported": int, "confirmed": int, "missing": int, "missing_books": list}
@@ -347,9 +338,8 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
                 }
                 await upsert_source_by_identifier(db, source_data)
 
-    # Сброс устаревших флагов is_new_arrival (старше 7 дней)
     await reset_stale_new_arrivals(db, source_id)
-    
+
     logger.info("Starting import_from_source for source_id=%s, directory=%s", source_id, directory)
     books = await scan_directory(directory, source_id)
     scanned = len(books)
@@ -357,10 +347,24 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     confirmed = 0
     covers_found = 0
     logger.info("Scanned %s books in directory: %s", scanned, directory)
-    
+
+    if progress_callback:
+        await progress_callback({
+            "event": "start",
+            "total_files": scanned,
+            "processed": 0,
+            "imported": 0,
+            "confirmed": 0,
+            "covers_found": 0,
+            "current_file": "",
+            "log_message": f"Found {scanned} files to process",
+        })
+
     found_paths = []
+    files_since_callback = 0
 
     for book in books:
+        files_since_callback += 1
         category_id = None
         if book.get("category_name"):
             category_id = await get_or_create_category(db, book["category_name"], source_id)
@@ -375,38 +379,59 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         existing = await cursor.fetchone()
 
         if existing:
-            # Книга существует - подтверждаем наличие (is_available=1, last_seen, cover_ext)
             book_id = existing[0]
             old_cover = await db.execute("SELECT cover_ext FROM books WHERE id = ?", (book_id,))
             old_cover_ext = await old_cover.fetchone()
             await confirm_book_presence(db, book_id, book.get("file_path"))
-            
+
             new_cover = await db.execute("SELECT cover_ext FROM books WHERE id = ?", (book_id,))
             new_cover_ext = await new_cover.fetchone()
             if old_cover_ext and not old_cover_ext[0] and new_cover_ext and new_cover_ext[0]:
                 covers_found += 1
                 logger.info("Cover found for existing book ID %s", book_id)
-            
+
             confirmed += 1
             logger.debug("Confirmed book ID %s: %s", book_id, book.get("title", ""))
         else:
-            # Новая книга - добавляем с флагом is_new_arrival=1
             book_id, is_new = await upsert_book_preserve(db, book)
             if is_new:
                 imported += 1
                 logger.info("Imported new book: %s (ID: %s)", book.get("title", ""), book_id)
             confirmed += 1
 
-# Получаем все книги хранилища из БД для поиска отсутствующих
+        if progress_callback and files_since_callback >= 10:
+            files_since_callback = 0
+            await progress_callback({
+                "event": "update",
+                "total_files": scanned,
+                "processed": len(found_paths),
+                "imported": imported,
+                "confirmed": confirmed,
+                "covers_found": covers_found,
+                "current_file": book.get("title", book.get("relative_path", "")),
+                "log_message": f"Processing: {book.get('title', book.get('relative_path', ''))}",
+            })
+
+    if progress_callback:
+        await progress_callback({
+            "event": "finalizing",
+            "total_files": scanned,
+            "processed": scanned,
+            "imported": imported,
+            "confirmed": confirmed,
+            "covers_found": covers_found,
+            "current_file": "",
+            "log_message": "Finalizing - checking for missing books...",
+            "status": "finalizing",
+        })
+
     all_source_books = await get_books_by_source_all(db, source_id)
     all_db_paths = set(book["relative_path"] for book in all_source_books)
 
     paths_to_include = set(found_paths)
-    # Книги, которые были в БД, но не найдены при сканировании
     missing_paths = all_db_paths - paths_to_include
 
     if missing_paths:
-        # Помечаем отсутствующие книги (is_available=0)
         placeholders = ",".join("?" * len(missing_paths))
         await db.execute(
             f"UPDATE books SET is_available = 0 WHERE source_id = ? AND relative_path IN ({placeholders})",
@@ -421,7 +446,6 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
     ]
     missing = len(missing_books)
 
-    # Подсчёт общего размера хранилища
     cursor = await db.execute(
         "SELECT COALESCE(SUM(file_size), 0) FROM books WHERE source_id = ?",
         (source_id,)
@@ -432,13 +456,27 @@ async def import_from_source(source_id: int, directory: str = None) -> dict:
         (total_size, source_id)
     )
     await db.commit()
-    
+
     await db.close()
     logger.info(
         "Import complete for source_id=%s: imported=%s, confirmed=%s, covers=%s, missing=%s, total_size=%s",
         source_id, imported, confirmed, covers_found, missing, total_size
     )
-    
+
+    if progress_callback:
+        await progress_callback({
+            "event": "complete",
+            "total_files": scanned,
+            "processed": scanned,
+            "imported": imported,
+            "confirmed": confirmed,
+            "covers_found": covers_found,
+            "missing": missing,
+            "missing_books": missing_books,
+            "current_file": "",
+            "log_message": f"Scan complete: {imported} imported, {confirmed} confirmed, {missing} missing",
+        })
+
     return {
         "source_id": source_id,
         "scanned": scanned,
@@ -468,7 +506,7 @@ async def import_library():
     for book in books:
         category_id = None
         if book.get("category_name"):
-            category_id = await get_or_create_category(db, book["category_name"], 0)  # source_id=0 for legacy import
+            category_id = await get_or_create_category(db, book["category_name"], 0)
 
         book["category_id"] = category_id
 

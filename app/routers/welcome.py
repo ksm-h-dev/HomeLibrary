@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 import aiosqlite
 import subprocess
 import os
+import logging
 from pathlib import Path
 
 from app.database import get_db, get_all_sources, get_stats
@@ -15,8 +16,10 @@ from app.models import (
 )
 from config import DEFAULT_SOURCE_PATH
 from services.drives import discover_drives
+from services.audit import log_audit, is_enabled as audit_is_enabled
 
 router = APIRouter(prefix="/api/setup", tags=["setup"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/status", response_model=SetupStatus)
@@ -184,9 +187,28 @@ async def perform_initial_scan(
             status_code=400, detail=f"Папка не существует: {current_path}"
         )
 
+    log_audit(
+        "initial_scan_start",
+        {"path": current_path},
+        "setup"
+    )
+
     try:
         # Import with source_id=None to create new source
         result = await import_from_source(None, current_path)
+
+        log_audit(
+            "initial_scan_complete",
+            {
+                "path": current_path,
+                "source_id": result.get("source_id", 0),
+                "scanned": result.get("scanned", 0),
+                "imported": result.get("imported", 0),
+                "confirmed": result.get("confirmed", 0),
+                "missing": result.get("missing", 0)
+            },
+            "setup"
+        )
 
         return InitialScanResponse(
             success=True,
@@ -198,6 +220,11 @@ async def perform_initial_scan(
             message=f"Сканирование завершено: импортировано {result.get('imported', 0)} новых книг",
         )
     except Exception as e:
+        log_audit(
+            "initial_scan_error",
+            {"path": current_path, "error": str(e)},
+            "setup"
+        )
         raise HTTPException(
             status_code=500, detail=f"Ошибка при сканировании: {str(e)}"
         )
@@ -220,6 +247,12 @@ async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
         cursor = await db.execute("SELECT COUNT(*) FROM sources")
         sources_count = (await cursor.fetchone())[0]
 
+        log_audit(
+            "library_initialize_start",
+            {"books_count": books_count, "sources_count": sources_count},
+            "setup"
+        )
+
         # Delete all books first (cascades to book_tags via ON DELETE CASCADE)
         await db.execute("DELETE FROM books")
 
@@ -234,6 +267,12 @@ async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
 
         await db.commit()
 
+        log_audit(
+            "library_initialized",
+            {"books_deleted": books_count, "sources_deleted": sources_count},
+            "setup"
+        )
+
         return {
             "success": True,
             "message": "Library initialized successfully",
@@ -245,3 +284,22 @@ async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
         raise HTTPException(
             status_code=500, detail=f"Failed to initialize library: {str(e)}"
         )
+
+
+@router.get("/audit/status")
+async def get_audit_status():
+    """Get current audit logging status."""
+    return {"audit_enabled": audit_is_enabled()}
+
+
+@router.post("/audit/toggle")
+async def toggle_audit(enable: bool = Query(...)):
+    """Enable or disable detailed audit logging."""
+    from services.audit import toggle
+    new_state = toggle(enable)
+    log_audit(
+        "audit_toggled",
+        {"enabled": new_state, "previous": not new_state},
+        "setup"
+    )
+    return {"success": True, "audit_enabled": new_state}
