@@ -42,14 +42,16 @@ H:\Work.Py\HomeLibrary\
 
 | File | Purpose |
 |------|---------|
-| `config.py` | Books dir, DB path, server port, DEFAULT_SOURCE_PATH, COVER_EXTENSIONS |
-| `services/importer.py` | Scans filesystem, parses metadata (.json/.txt, KOI8-R/CP1251), imports to DB, confirms availability, marks new arrivals |
+| `config.py` | Books dir, DB path, server port, DEFAULT_SOURCE_PATH, COVER_EXTENSIONS, AUDIT_ENABLED |
+| `services/importer.py` | Scans filesystem, parses metadata (.json/.txt, KOI8-R/CP1251), imports to DB, confirms availability, marks new arrivals, tracks covers_found |
 | `services/drives.py` | Discovers Windows drives via WMI/PowerShell |
+| `services/audit.py` | Audit logging system for tracking user actions |
+| `services/progress.py` | Progress tracker for SSE scan events (fixes duplicate complete events) |
 | `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers, export_book_to_json, move_book_files, availability logic, new arrivals handling |
-| `app/routers/books.py` | Book CRUD API with export/move on update |
-| `app/routers/sources.py` | Storage management API (CRUD, scan with confirmed/imported/missing stats) |
-| `app/routers/welcome.py` | First-run setup, about page API |
-| `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards |
+| `app/routers/books.py` | Book CRUD API with export/move on update, translated messages to Russian |
+| `app/routers/sources.py` | Storage management API (CRUD, scan with scanned/imported/confirmed/covers_found stats, translated messages) |
+| `app/routers/welcome.py` | First-run setup, about page API, translated messages |
+| `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards, custom modal dialogs (replaces alert/confirm) |
 | `web/setup.html` | First-run setup wizard |
 | `web/about.html` | About page |
 
@@ -108,6 +110,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/sources/{id}/scan` | POST | Scan source (returns: scanned, imported, confirmed, covers_found, missing, missing_books) |
 | `/api/sources/{id}/books` | GET | Books in source |
 | `/api/sources/discover` | GET | Auto-detect Windows drives |
+| `/api/sources/{id}/transfer` | POST | Transfer source to new location |
 | `/api/books/{id}/open` | POST | Open book file |
 | `/api/setup/status` | GET | Setup status |
 | `/api/setup/drives` | GET | Available drives |
@@ -117,6 +120,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/setup/skip` | POST | Skip setup |
 | `/api/setup/initialize` | POST | Reset library (delete all) |
 | `/api/cover?path=...` | GET | Serve cover image (proxy) |
+| `/api/audit-log` | GET | View audit log (if enabled) |
 
 ## Search
 
@@ -157,9 +161,9 @@ COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 - **Full-text search** с использованием SQLite FTS5
 - **Каскадное удаление** хранилищ, книг и категорий
 - **Инициализация библиотеки** - полная очистка БД
-- **Управление хранилищами** - добавление, редактирование, удаление, перенос
+- **Управление хранилищами** - добавление, редактирование, удаление, перенос с прогресс-баром
 - **Автосканирование при первом запуске** (по желанию)
-- **Ручное сканирование** - только по кнопке
+- **Ручное сканирование** - только по кнопке, SSE-прогресс
 - **Метаданные** - поддержка KOI8-R, CP1251, .json приоритет над .txt
 - **Категория** - определяется по имени папки, привязана к хранилищу (source_id)
 - **Подтверждение наличия** - при сканировании книги подтверждаются без перезаписи данных
@@ -167,26 +171,15 @@ COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 - **Фильтрация по наличию** - доступно/отсутствует/новые поступления
 - **Цветовая индикация** - зелёный (в наличии), красный (отсутствует)
 - **Экспорт метаданных** - при редактировании книги метаданные экспортируются в .json
-- **Перемещение файлов** - при изменении пути перемещаются все файлы книги
-- **Поддержка многотомных архивов** - .part1.rar, .part2.rar и т.д.
-- **Расширенные форматы обложек** - bmp, webp, tiff
-- **Обложки книг** - автоматическое обнаружение при сканировании
-- **Прокси обложек** - /api/cover?path=... для безопасной загрузки
-- **Три вкладки**: Каталог, Хранилища, Инструменты
-- **Перенос хранилища** - с прогресс-баром
-- **Исправление багов** - при удалении хранилища удаляются связанные категории
-- **Инициализация библиотеки** - полный сброс базы данных
-- **Автосканирование** при первом запуске с конфигом
-- **Метаданные** - поддержка KOI8-R, CP1251, .json приоритет над .txt
-- **Категория** - определяется по имени папки
-- **Подтверждение наличия** - при сканировании книги подтверждаются без перезаписи данных
-- **Новые поступления** - флаг `is_new_arrival` (сбрасывается через 7 дней)
-- **Фильтрация по наличию** - доступно/отсутствует/новые поступления
-- **Цветовая индикация** - зелёный (в наличии), красный (отсутствует)
-- **Экспорт метаданных** - при редактировании книги метаданные экспортируются в .json
 - **Перемещение файлов** - при изменении пути перемещаются все файлы книги (.pdf + .json + .txt + обложка)
+- **Поддержка многотомных архивов** - .part1.rar, .part2.rar и т.д.
 - **Расширенные форматы обложек** - bmp, webp, tiff
 - **Обложки книг** - автоматическое обнаружение при сканировании, отображение по клику
 - **Прокси обложек** - `/api/cover?path=...` для безопасной загрузки изображений
 - **Три вкладки интерфейса**: Каталог, Хранилища, Инструменты
 - **Расширенное редактирование книги**: publisher, pages, format, language
+- **Аудит-логи** - отслеживание действий пользователя (services/audit.py)
+- **Прогресс-трекер** - SSE-события для сканирования без дублирования (services/progress.py)
+- **Кастомные модальные окна** - замена alert()/confirm() на единый стиль
+- **Перевод сообщений** - API возвращает сообщения на русском языке
+- **Исправление статистики сканирования** - корректный подсчет imported/confirmed/covers_found
