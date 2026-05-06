@@ -69,6 +69,7 @@ class ScanProgressTracker:
         async with self._lock:
             self._progress[source_id] = ScanProgress(source_id, source_name, total_files)
             self._queues[source_id] = asyncio.Queue()
+            logger.info("Started tracking source_id=%s, queue created", source_id)
             await self._queues[source_id].put({"event": "start", "data": self._progress[source_id].to_dict()})
 
     async def update(self, source_id: int, processed: int, imported: int = 0, confirmed: int = 0, covers_found: int = 0, current_file: str = "", log_message: str = "", status: str = ""):
@@ -120,19 +121,27 @@ class ScanProgressTracker:
         import json
         queue = self._queues.get(source_id)
         if not queue:
+            logger.error("No queue for source_id=%s", source_id)
             yield 'event: error\ndata: {"error": "No scan in progress"}\n\n'
             return
+        logger.info("SSE stream started for source_id=%s", source_id)
         try:
             while True:
-                event = await asyncio.wait_for(queue.get(), timeout=30)
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=30)
+                except asyncio.TimeoutError:
+                    yield ": heartbeat\n\n"
+                    continue
                 event_type = event["event"]
                 data_json = json.dumps(event["data"], ensure_ascii=False, default=str)
+                logger.info("SSE sending event=%s for source_id=%s", event_type, source_id)
                 yield f"event: {event_type}\ndata: {data_json}\n\n"
                 if event_type in ("complete", "error"):
                     await asyncio.sleep(3)
                     break
-        except asyncio.TimeoutError:
-            yield ": heartbeat\n\n"
+        except Exception as e:
+            logger.error("SSE stream error for source_id=%s: %s", source_id, e)
+        logger.info("SSE stream ended for source_id=%s", source_id)
 
 
 tracker = ScanProgressTracker()

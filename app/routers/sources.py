@@ -243,9 +243,7 @@ async def scan_source_stream(source_id: int, db: aiosqlite.Connection = Depends(
 
     async def progress_handler(stats: dict):
         event = stats.get("event", "update")
-        if event == "start":
-            await tracker.start(source_id, source["name"], stats.get("total_files", total_files))
-        elif event in ("update", "finalizing"):
+        if event in ("update", "finalizing"):
             await tracker.update(
                 source_id,
                 processed=stats.get("processed", 0),
@@ -263,6 +261,8 @@ async def scan_source_stream(source_id: int, db: aiosqlite.Connection = Depends(
                 missing_books=stats.get("missing_books", []),
             )
 
+    await tracker.start(source_id, source["name"], total_files)
+
     async def run_scan():
         source_name = source["name"]
         log_audit(
@@ -273,6 +273,11 @@ async def scan_source_stream(source_id: int, db: aiosqlite.Connection = Depends(
         try:
             result = await import_from_source(source_id, directory, progress_callback=progress_handler)
             logger.info("Stream scan completed for source '%s': %s", source_name, result)
+            await tracker.complete(
+                source_id,
+                missing=result.get("missing", 0),
+                missing_books=result.get("missing_books", []),
+            )
             log_audit(
                 "source_scan_complete",
                 {
@@ -301,7 +306,7 @@ async def scan_source_stream(source_id: int, db: aiosqlite.Connection = Depends(
             )
             await tracker.error(source_id, str(e))
         finally:
-            await asyncio.sleep(2)
+            await asyncio.sleep(5)
             await tracker.cleanup(source_id)
 
     asyncio.create_task(run_scan())

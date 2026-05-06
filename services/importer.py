@@ -463,20 +463,6 @@ async def import_from_source(
         source_id, imported, confirmed, covers_found, missing, total_size
     )
 
-    if progress_callback:
-        await progress_callback({
-            "event": "complete",
-            "total_files": scanned,
-            "processed": scanned,
-            "imported": imported,
-            "confirmed": confirmed,
-            "covers_found": covers_found,
-            "missing": missing,
-            "missing_books": missing_books,
-            "current_file": "",
-            "log_message": f"Scan complete: {imported} imported, {confirmed} confirmed, {missing} missing",
-        })
-
     return {
         "source_id": source_id,
         "scanned": scanned,
