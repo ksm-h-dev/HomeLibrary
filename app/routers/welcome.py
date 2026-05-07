@@ -238,7 +238,7 @@ async def skip_setup():
 
 @router.post("/initialize")
 async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
-    """Reset library to initial state - delete all books and sources"""
+    """Reset library to initial state - delete all books, sources and categories"""
     try:
         # Count items before deletion for response
         cursor = await db.execute("SELECT COUNT(*) FROM books")
@@ -247,29 +247,44 @@ async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
         cursor = await db.execute("SELECT COUNT(*) FROM sources")
         sources_count = (await cursor.fetchone())[0]
 
+        cursor = await db.execute("SELECT COUNT(*) FROM categories")
+        categories_count = (await cursor.fetchone())[0]
+
         log_audit(
             "library_initialize_start",
-            {"books_count": books_count, "sources_count": sources_count},
+            {
+                "books_count": books_count,
+                "sources_count": sources_count,
+                "categories_count": categories_count,
+            },
             "setup"
         )
 
-        # Delete all books first (cascades to book_tags via ON DELETE CASCADE)
+        # Disable foreign keys to avoid self-referencing constraint issues
+        await db.execute("PRAGMA foreign_keys = OFF")
+
+        # Delete child categories first (self-referencing parent_id), then all
+        await db.execute("DELETE FROM categories WHERE parent_id IS NOT NULL")
+        await db.execute("DELETE FROM categories")
+
+        # Delete all books
         await db.execute("DELETE FROM books")
 
         # Delete all sources
         await db.execute("DELETE FROM sources")
 
-        # Delete all categories
-        await db.execute("DELETE FROM categories")
-
-        # Clear FTS index by deleting all entries (triggers will handle this but FTS table needs manual cleanup)
+        # Clear FTS index
         await db.execute("DELETE FROM books_fts")
 
         await db.commit()
 
         log_audit(
             "library_initialized",
-            {"books_deleted": books_count, "sources_deleted": sources_count},
+            {
+                "books_deleted": books_count,
+                "sources_deleted": sources_count,
+                "categories_deleted": categories_count,
+            },
             "setup"
         )
 
@@ -278,6 +293,7 @@ async def initialize_library(db: aiosqlite.Connection = Depends(get_db)):
             "message": "Библиотека успешно инициализирована",
             "books_deleted": books_count,
             "sources_deleted": sources_count,
+            "categories_deleted": categories_count,
         }
     except Exception as e:
         await db.rollback()

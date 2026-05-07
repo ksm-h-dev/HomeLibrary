@@ -42,16 +42,16 @@ H:\Work.Py\HomeLibrary\
 
 | File | Purpose |
 |------|---------|
-| `config.py` | Books dir, DB path, server port, DEFAULT_SOURCE_PATH, COVER_EXTENSIONS, AUDIT_ENABLED |
-| `services/importer.py` | Scans filesystem, parses metadata (.json/.txt, KOI8-R/CP1251), imports to DB, confirms availability, marks new arrivals, tracks covers_found |
+| `config.py` | Books dir, DB path, server port, DEFAULT_SOURCE_PATH, COVER_EXTENSIONS, AUDIT_ENABLED, SUPPORTED_FORMATS (pdf/djvu/rar/zip/rtf/7z) |
+| `services/importer.py` | Scans filesystem, parses metadata (.json/.txt, KOI8-R/CP1251), imports to DB, confirms availability, marks new arrivals, tracks covers_found, finds multi-part archive siblings (extra_files) |
 | `services/drives.py` | Discovers Windows drives via WMI/PowerShell |
 | `services/audit.py` | Audit logging system for tracking user actions |
 | `services/progress.py` | Progress tracker for SSE scan events (fixes duplicate complete events) |
-| `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers, export_book_to_json, move_book_files, availability logic, new arrivals handling |
+| `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers, export_book_to_json, move_book_files, transfer_source, availability logic, new arrivals handling, extra_files support |
 | `app/routers/books.py` | Book CRUD API with export/move on update, translated messages to Russian |
-| `app/routers/sources.py` | Storage management API (CRUD, scan with scanned/imported/confirmed/covers_found stats, translated messages) |
-| `app/routers/welcome.py` | First-run setup, about page API, translated messages |
-| `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards, custom modal dialogs (replaces alert/confirm) |
+| `app/routers/sources.py` | Storage management API (CRUD, scan with scanned/imported/confirmed/covers_found stats, transfer with progress, translated messages) |
+| `app/routers/welcome.py` | First-run setup, about page API, initialize library (clears books + sources + categories), translated messages |
+| `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards, custom modal dialogs (replaces alert/confirm), tools tab with DB initialize |
 | `web/setup.html` | First-run setup wizard |
 | `web/about.html` | About page |
 
@@ -61,6 +61,7 @@ H:\Work.Py\HomeLibrary\
 - Triggers auto-update FTS index on INSERT/UPDATE/DELETE to `books`
 - `books` table: unique index on `source_id + relative_path` (no duplicates)
 - New fields: `cover_ext` (обложка: jpg/png/gif/webp/bmp/tiff), `is_available`, `is_new_arrival`, `last_seen`, `format`
+- `extra_files` (TEXT) — JSON-массив путей multi-part архивов (.part2.rar, .7z.002)
 
 ## Storage Sources
 
@@ -118,7 +119,7 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/setup/save-path` | POST | Save path to config.py |
 | `/api/setup/scan` | POST | Initial scan |
 | `/api/setup/skip` | POST | Skip setup |
-| `/api/setup/initialize` | POST | Reset library (delete all) |
+| `/api/setup/initialize` | POST | Reset library (delete all books + sources + categories, returns categories_deleted) |
 | `/api/cover?path=...` | GET | Serve cover image (proxy) |
 | `/api/audit-log` | GET | View audit log (if enabled) |
 
@@ -151,7 +152,7 @@ SERVER_PORT = int(os.getenv("LIBRARY_PORT", "8000"))
 DEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", "H:/Book")
 SHOW_WELCOME = os.getenv("LIBRARY_SHOW_WELCOME", "true")
 
-SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf"]
+SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf", "7z"]
 SUPPORTED_METADATA_EXT = ["txt", "json"]
 COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 ```
@@ -172,7 +173,7 @@ COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 - **Цветовая индикация** - зелёный (в наличии), красный (отсутствует)
 - **Экспорт метаданных** - при редактировании книги метаданные экспортируются в .json
 - **Перемещение файлов** - при изменении пути перемещаются все файлы книги (.pdf + .json + .txt + обложка)
-- **Поддержка многотомных архивов** - .part1.rar, .part2.rar и т.д.
+- **Поддержка многотомных архивов** - .part1.rar, .part2.rar и т.д. (extra_files)
 - **Расширенные форматы обложек** - bmp, webp, tiff
 - **Обложки книг** - автоматическое обнаружение при сканировании, отображение по клику
 - **Прокси обложек** - `/api/cover?path=...` для безопасной загрузки изображений

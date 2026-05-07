@@ -1,3 +1,4 @@
+import json
 import os
 import re
 import aiosqlite
@@ -129,11 +130,17 @@ async def parse_metadata_file(filepath: str) -> dict:
 
 def find_metadata_file(book_path: str) -> tuple[str | None, str]:
     base = str(Path(book_path).with_suffix(""))
+    full = str(Path(book_path))
     if ".part" in base.lower():
         match = re.match(r"(.+)\.part\d+", base, re.IGNORECASE)
         if match:
             base = match.group(1)
     for ext in [".json", ".txt", ".html", ".dusd"]:
+        # Check double extension: bookname.format.txt
+        meta_file = full + ext
+        if os.path.exists(meta_file):
+            return meta_file, ext
+        # Check standard: bookname.txt
         meta_file = base + ext
         if os.path.exists(meta_file):
             return meta_file, ext
@@ -178,8 +185,15 @@ def find_cover_file(book_path: str) -> tuple[str | None, str]:
 
     base_stem = Path(book_path).stem
     base_stem = re.sub(r"\.part\d+$", "", base_stem, flags=re.IGNORECASE)
+    filename = Path(book_path).name
 
     for ext in COVER_EXTENSIONS:
+        # Check double extension: bookname.rar.jpg
+        cover_name = f"{filename}.{ext}"
+        cover_path = book_dir / cover_name
+        if cover_path.exists():
+            return str(cover_path), ext
+        # Check standard: bookname.jpg
         cover_name = f"{base_stem}.{ext}"
         cover_path = book_dir / cover_name
         if cover_path.exists():
@@ -192,6 +206,45 @@ def compute_relative_path(root_path: str, file_path: str) -> str:
     rel = os.path.relpath(file_path, root_path)
     rel = re.sub(r"\.part\d+(\.[^.]+)$", r"\1", rel, flags=re.IGNORECASE)
     return rel.replace("\\", "/")
+
+
+def find_extra_files(filepath: str, source_dir: str) -> list[str]:
+    extra = []
+    base_dir = os.path.dirname(filepath)
+    filename = os.path.basename(filepath)
+
+    # RAR multi-part: file.part1.rar → file.part2.rar, file.part3.rar...
+    m = re.match(r'^(.+)\.part1\.(rar)$', filename, re.IGNORECASE)
+    if m:
+        prefix = m.group(1)
+        ext = m.group(2)
+        part_num = 2
+        while True:
+            part_name = f"{prefix}.part{part_num}.{ext}"
+            part_path = os.path.join(base_dir, part_name)
+            if os.path.exists(part_path):
+                extra.append(os.path.relpath(part_path, source_dir).replace("\\", "/"))
+                part_num += 1
+            else:
+                break
+        return extra
+
+    # 7z split: file.7z.001 → file.7z.002, file.7z.003...
+    m = re.match(r'^(.+\.7z)\.(\d{3})$', filename, re.IGNORECASE)
+    if m:
+        prefix = m.group(1)
+        part_num = int(m.group(2)) + 1
+        while part_num <= 999:
+            part_name = f"{prefix}.{part_num:03d}"
+            part_path = os.path.join(base_dir, part_name)
+            if os.path.exists(part_path):
+                extra.append(os.path.relpath(part_path, source_dir).replace("\\", "/"))
+                part_num += 1
+            else:
+                break
+        return extra
+
+    return extra
 
 
 async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
@@ -211,13 +264,26 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 continue
 
             filepath = os.path.join(root, filename)
-            ext = filename.lower().split(".")[-1]
+            file_lower = filename.lower()
 
-            if ext not in SUPPORTED_FORMATS:
+            # 7z split companion files (.z01, .z02) — skip entirely
+            if re.search(r'\.z\d{2}$', file_lower):
                 continue
 
-            if ".part" in filename.lower() and not re.match(r".*\.part1\.rar$", filename, re.IGNORECASE):
-                continue
+            # Detect format and handle multi-part
+            m_7zsplit = re.search(r'^(.+)\.7z\.(\d{3})$', file_lower)
+            if m_7zsplit:
+                ext = '7z'
+                if m_7zsplit.group(2) != '001':
+                    continue
+            elif '.part' in file_lower and file_lower.endswith('.rar'):
+                if not re.match(r'.*\.part1\.rar$', file_lower):
+                    continue
+                ext = 'rar'
+            else:
+                ext = file_lower.split(".")[-1]
+                if ext not in SUPPORTED_FORMATS:
+                    continue
 
             book_info = {
                 "file_path": filepath,
@@ -248,6 +314,11 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 book_info["title"] = (
                     Path(title_filename).stem.replace("_", " ").replace("-", " ")
                 )
+
+            # Find multi-part extra files (.part2.rar, .7z.002, etc.)
+            extra_files = find_extra_files(filepath, directory)
+            if extra_files:
+                book_info["extra_files"] = json.dumps(extra_files)
 
             if source_id:
                 book_info["source_id"] = source_id

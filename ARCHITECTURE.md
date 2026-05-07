@@ -82,13 +82,14 @@
 | isbn | TEXT | ISBN |
 | year | INTEGER | Год издания |
 | pages | INTEGER | Количество страниц |
-| format | TEXT | Формат файла (pdf, djvu, rar, zip) |
+| format | TEXT | Формат файла (pdf, djvu, rar, zip, rtf, 7z) |
 | file_size | INTEGER | Размер файла в байтах |
 | description | TEXT | Описание книги |
 | file_path | TEXT | Полный путь к файлу книги |
 | relative_path | TEXT | Относительный путь от корня хранилища |
 | cover_path | TEXT | Путь к обложке |
 | cover_ext | TEXT | Расширение обложки (jpg, png, webp, bmp, tiff) |
+| extra_files | TEXT | JSON-массив путей multi-part архивов (.part2.rar, .7z.002) |
 | category_id | INTEGER | Внешний ключ на categories |
 | source_id | INTEGER | Внешний ключ на sources |
 | language | TEXT | Язык (ru, en) |
@@ -121,6 +122,7 @@
 |------|-----|----------|
 | id | INTEGER | Первичный ключ |
 | name | TEXT | Название категории |
+| source_id | INTEGER | Внешний ключ на sources (привязка к хранилищу) |
 | parent_id | INTEGER | Родительская категория (для иерархии) |
 
 **Таблица `tags`**
@@ -153,22 +155,21 @@
 - `app/models.py` - Pydantic модели для валидации
 - `app/routers/books.py` - эндпоинты для работы с книгами (фильтр availability)
 - `app/routers/search.py` - эндпоинты для поиска (фильтр availability)
-- `app/routers/sources.py` - эндпоинты для хранилищ (CRUD, сканирование)
-- `app/routers/welcome.py` - настройка, about page API
+- `app/routers/sources.py` - эндпоинты для хранилищ (CRUD, сканирование, перенос с прогресс-баром)
+- `app/routers/welcome.py` - настройка, about page API, инициализация библиотеки
 
 ### 3. Импортер (services/importer.py)
 
 **Функции:**
 
-- `scan_directory(path, source_id)` - рекурсивное сканирование каталога
+- `scan_directory(path, source_id)` - рекурсивное сканирование каталога (фильтр SUPPORTED_FORMATS, multi-part .rar/.7z)
+- `find_extra_files(book_path)` - поиск multi-part архивов (.partN.rar, .7z.NNN)
 - `parse_metadata_file(filepath)` - парсинг .json или .txt файла
 - `parse_metadata_json(filepath)` - парсинг .json метаданных
 - `parse_metadata_txt(filepath)` - парсинг .txt метаданных
 - `extract_book_info(filename)` - извлечение информации из имени файла
 - `find_cover_file(book_path)` - поиск обложки (jpg, png, gif, webp, bmp, tiff)
-- `import_from_source(source_id, directory)` - импорт с логикой наличия
-- `export_book_to_json(book_id, directory)` - экспорт метаданных в .json при редактировании книги
-- `move_book_files(book_id, new_directory)` - перемещение всех файлов книги
+- `import_from_source(source_id, directory)` - импорт с логикой наличия, сохранение extra_files
 
 **Приоритет метаданных:** .json → .txt
 
@@ -198,8 +199,9 @@
 - Сортировка (дата, название, автор, год, страницы)
 - Цветовая индикация карточек: **зелёный** (в наличии), **красный** (отсутствует)
 - Пагинация
-- Вкладки: Каталог / Хранилища
-- Модальные окна: настройки, редактирование книги, добавление хранилища
+- Три вкладки: Каталог / Хранилища / Инструменты
+- Модальные окна: настройки, редактирование книги, добавление хранилища, инициализация БД, просмотр лога
+- Кастомные модальные окна (замена alert/confirm)
 
 ## Поток данных
 
@@ -418,7 +420,7 @@ User Input ─► API Request ─► Search Service ─► FTS5 Query ─► Res
 - `POST /api/setup/save-path` - сохранение пути в config.py
 - `POST /api/setup/scan` - первичное сканирование
 - `POST /api/setup/skip` - пропуск настройки
-- `POST /api/setup/initialize` - сброс библиотеки
+- `POST /api/setup/initialize` - сброс библиотеки (удаляет книги + хранилища + категории, возвращает categories_deleted)
 
 ## Развертывание
 
@@ -467,7 +469,7 @@ netsh advfirewall firewall add rule name="Library Server" ^
 
 ### Инструменты
 - Настройки (путь к библиотеке)
-- Инициализация библиотеки (сброс базы данных)
+- Инициализация библиотеки (сброс базы: книги + хранилища + категории)
 
 **Модальные окна:**
 - Редактирование книги

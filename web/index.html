@@ -551,6 +551,11 @@
                                 </div>
                                 <div class="tile-label">Log</div>
                             </div>
+
+                            <div class="tools-tile" onclick="openAnomalyModal()" title="Поиск аномалий в хранилище">
+                                <div class="tile-icon" style="font-size: 36px; color: #e74c3c;">&#9888;</div>
+                                <div class="tile-label">Поиск аномалий</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1273,7 +1278,7 @@
                     try {
                         const res = await fetch('/api/setup/initialize', { method: 'POST' });
                         const data = await res.json();
-                        showMessageModal('Результат', data.message + '\nУдалено книг: ' + data.books_deleted + '\nУдалено хранилищ: ' + data.sources_deleted);
+                        showMessageModal('Результат', data.message + '\nУдалено книг: ' + data.books_deleted + '\nУдалено хранилищ: ' + data.sources_deleted + '\nУдалено категорий: ' + (data.categories_deleted || 0));
                         loadBooks();
                         loadStats();
                         loadSources();
@@ -1707,6 +1712,146 @@
             window.open('/api/audit-log?lines=500', '_blank');
         }
 
+        // Anomaly scan functions
+        async function openAnomalyModal() {
+            document.getElementById('anomalyModal').classList.add('active');
+            document.getElementById('anomalyResults').style.display = 'none';
+            document.getElementById('anomalyProgress').style.display = 'none';
+            document.getElementById('anomalySummary').innerHTML = '';
+            document.getElementById('anomalyList').innerHTML = '';
+            await loadAnomalySources();
+        }
+
+        function closeAnomalyModal() {
+            document.getElementById('anomalyModal').classList.remove('active');
+        }
+
+        async function loadAnomalySources() {
+            try {
+                const res = await fetch('/api/sources');
+                const sources = await res.json();
+                const select = document.getElementById('anomalySourceSelect');
+                select.innerHTML = '<option value="">-- Выберите хранилище --</option>';
+                sources.forEach(s => {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.name + ' (' + s.path + ')';
+                    select.appendChild(opt);
+                });
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function startAnomalyScan() {
+            const sourceId = document.getElementById('anomalySourceSelect').value;
+            if (!sourceId) {
+                showMessageModal('Ошибка', 'Выберите хранилище для сканирования');
+                return;
+            }
+
+            document.getElementById('anomalyBtn').disabled = true;
+            document.getElementById('anomalyBtn').textContent = 'Сканирование...';
+            document.getElementById('anomalyProgress').style.display = 'block';
+            document.getElementById('anomalyResults').style.display = 'none';
+
+            try {
+                const res = await fetch('/api/sources/' + sourceId + '/anomalies', { method: 'POST' });
+                const data = await res.json();
+
+                document.getElementById('anomalyProgress').style.display = 'none';
+                document.getElementById('anomalyResults').style.display = 'block';
+
+                if (!data.success) {
+                    showMessageModal('Ошибка', data.message || 'Неизвестная ошибка');
+                    return;
+                }
+
+                // Build summary
+                const summaryHtml = '<p><strong>Хранилище:</strong> ' + escapeHtml(data.source_name) +
+                    '</p><p><strong>Путь:</strong> ' + escapeHtml(data.directory) +
+                    '</p><p><strong>Книг в БД:</strong> ' + data.db_books_count +
+                    ' | <strong>Просканировано файлов:</strong> ' + data.scanned_files +
+                    ' | <strong>Аномалий:</strong> <span style="color:' + (data.total_anomalies > 0 ? '#e74c3c' : '#27ae60') + ';font-weight:bold;">' + data.total_anomalies + '</span></p>';
+
+                document.getElementById('anomalySummary').innerHTML = summaryHtml;
+
+                // Build type labels lookup
+                const typeLabels = {
+                    'unlisted_supported': 'Неучтённые книги',
+                    'metadata_orphan': 'Метаданные без книги',
+                    'double_ext_metadata': 'Метаданные с двойным расширением',
+                    'multi_part_orphan': 'Фрагменты многотомных архивов',
+                    'dusd_file': 'Файлы Download Master',
+                    'orphan_cover': 'Обложки без книги',
+                    'unknown_type': 'Файлы неизвестного типа'
+                };
+
+                // Summary counts per type
+                let countsHtml = '<div style="margin:10px 0;display:flex;flex-wrap:wrap;gap:8px;">';
+                const typeColors = {
+                    'unlisted_supported': '#3498db',
+                    'metadata_orphan': '#f39c12',
+                    'double_ext_metadata': '#e67e22',
+                    'multi_part_orphan': '#e74c3c',
+                    'dusd_file': '#9b59b6',
+                    'orphan_cover': '#1abc9c',
+                    'unknown_type': '#95a5a6'
+                };
+                for (const [type, count] of Object.entries(data.summary)) {
+                    const label = typeLabels[type] || type;
+                    const color = typeColors[type] || '#333';
+                    countsHtml += '<span style="padding:4px 10px;background:' + color + ';color:white;border-radius:4px;font-size:12px;">' + label + ': ' + count + '</span>';
+                }
+                countsHtml += '</div>';
+                document.getElementById('anomalyCounts').innerHTML = countsHtml;
+
+                // Empty directories
+                if (data.empty_directories && data.empty_directories.length > 0) {
+                    const dirList = data.empty_directories.map(d => escapeHtml(d)).join('<br>');
+                    document.getElementById('anomalyEmptyDirs').innerHTML =
+                        '<div style="margin:10px 0;padding:10px;background:#f8f9fa;border-radius:4px;">' +
+                        '<strong>Пустые папки (' + data.empty_directories.length + '):</strong><br>' + dirList + '</div>';
+                } else {
+                    document.getElementById('anomalyEmptyDirs').innerHTML = '';
+                }
+
+                // Build anomaly list
+                if (data.anomalies.length === 0) {
+                    document.getElementById('anomalyList').innerHTML =
+                        '<div style="text-align:center;padding:20px;color:#27ae60;"><strong>Аномалий не найдено</strong></div>';
+                } else {
+                    let listHtml = '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+                        '<thead><tr style="background:#ecf0f1;">' +
+                        '<th style="padding:8px;text-align:left;">Тип</th>' +
+                        '<th style="padding:8px;text-align:left;">Файл</th>' +
+                        '<th style="padding:8px;text-align:right;">Размер</th>' +
+                        '</tr></thead><tbody>';
+
+                    data.anomalies.forEach(a => {
+                        const sizeStr = a.size > 1048576 ? (a.size / 1048576).toFixed(1) + ' MB' :
+                            a.size > 1024 ? (a.size / 1024).toFixed(1) + ' KB' : a.size + ' B';
+                        listHtml += '<tr style="border-bottom:1px solid #eee;">' +
+                            '<td style="padding:6px 8px;"><span title="' + escapeHtml(a.description) + '" style="cursor:help;border-bottom:1px dotted #999;">' + escapeHtml(a.type_label) + '</span></td>' +
+                            '<td style="padding:6px 8px;word-break:break-all;max-width:400px;">' + escapeHtml(a.path) + '</td>' +
+                            '<td style="padding:6px 8px;text-align:right;white-space:nowrap;">' + sizeStr + '</td>' +
+                            '</tr>';
+                    });
+
+                    listHtml += '</tbody></table>';
+                    document.getElementById('anomalyList').innerHTML = listHtml;
+                }
+
+            } catch (e) {
+                console.error(e);
+                document.getElementById('anomalyProgress').style.display = 'none';
+                showMessageModal('Ошибка', 'Ошибка при сканировании: ' + e.message);
+            } finally {
+                document.getElementById('anomalyBtn').disabled = false;
+                document.getElementById('anomalyBtn').textContent = 'Начать сканирование';
+            }
+        }
+
         // Message modal functions
         function showMessageModal(title, message) {
             document.getElementById('messageModalTitle').textContent = title || 'Сообщение';
@@ -1794,6 +1939,34 @@
                 <button class="cancel-btn" onclick="cancelScan()">Отмена</button>
                 <button class="save-btn" onclick="confirmScan()">Да, сканировать</button>
             </div>
+        </div>
+    </div>
+</div>
+
+<div id="anomalyModal" class="modal-overlay">
+    <div class="modal" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+        <h2>Поиск аномалий</h2>
+        <div style="margin-bottom: 15px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <label style="font-size: 13px; color: #666;">Хранилище:</label>
+            <select id="anomalySourceSelect" style="flex:1; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
+                <option value="">-- Загрузка... --</option>
+            </select>
+            <button id="anomalyBtn" class="save-btn" onclick="startAnomalyScan()">Начать сканирование</button>
+        </div>
+
+        <div id="anomalyProgress" style="display:none; text-align:center; padding: 20px; color: #666;">
+            <span style="font-size: 18px;">&#8987;</span> Сканирование...
+        </div>
+
+        <div id="anomalyResults" style="display:none; flex:1; overflow-y: auto; min-height: 0;">
+            <div id="anomalySummary" style="background: #f8f9fa; padding: 12px; border-radius: 4px; margin-bottom: 10px;"></div>
+            <div id="anomalyCounts"></div>
+            <div id="anomalyEmptyDirs"></div>
+            <div id="anomalyList"></div>
+        </div>
+
+        <div class="buttons" style="margin-top: 15px;">
+            <button class="cancel-btn" onclick="closeAnomalyModal()">Закрыть</button>
         </div>
     </div>
 </div>

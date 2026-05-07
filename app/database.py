@@ -1,5 +1,7 @@
+import json
 import aiosqlite
 import os
+import stat
 from config import DATABASE_URL
 
 DATABASE_PATH = DATABASE_URL
@@ -59,6 +61,7 @@ async def init_db():
                 source_id INTEGER,
                 language TEXT DEFAULT 'ru',
                 source_url TEXT DEFAULT '',
+                extra_files TEXT DEFAULT '',
                 is_available INTEGER DEFAULT 1,
                 last_seen TIMESTAMP,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -107,6 +110,11 @@ async def init_db():
             pass
         try:
             await db.execute("ALTER TABLE sources ADD COLUMN total_size INTEGER DEFAULT 0")
+            await db.commit()
+        except:
+            pass
+        try:
+            await db.execute("ALTER TABLE books ADD COLUMN extra_files TEXT DEFAULT ''")
             await db.commit()
         except:
             pass
@@ -897,6 +905,13 @@ async def transfer_source(
     """, (source_id,))
     categories = await cursor.fetchall()
     
+    transferred = 0
+    deleted_originals = 0
+    errors = []
+    successful_book_ids = []
+    detailed_log = []
+    operation_log = []
+    
     # Создаём целевую директорию если нужно
     if is_new_target:
         try:
@@ -910,13 +925,6 @@ async def transfer_source(
         "SELECT * FROM books WHERE source_id = ?", (source_id,)
     )
     books = await cursor.fetchall()
-    
-    transferred = 0
-    deleted_originals = 0
-    errors = []
-    successful_book_ids = []
-    detailed_log = []  # Подробный лог
-    operation_log = []  # Лог операций: копирование, удаление, категории
     
     for book_row in books:
         book = dict(book_row)
@@ -1016,6 +1024,7 @@ async def transfer_source(
         
         # Удаляем оригинал после успешного копирования
         try:
+            os.chmod(source_file, stat.S_IWRITE)
             os.remove(source_file)
             operation_log.append({
                 "type": "file_delete",
@@ -1030,8 +1039,6 @@ async def transfer_source(
                 "status": "error",
                 "error": str(e)
             })
-        except Exception as e:
-            book_log["details"] += f" | Оригинал не удалён: {str(e)}"
         
         # Переносим обложку
         cover_path = book.get("cover_path", "")
@@ -1047,6 +1054,7 @@ async def transfer_source(
                 })
                 book["cover_path"] = target_cover
                 try:
+                    os.chmod(cover_path, stat.S_IWRITE)
                     os.remove(cover_path)
                     operation_log.append({
                         "type": "file_delete",
@@ -1072,9 +1080,12 @@ async def transfer_source(
         
         # Переносим метаданные .json если есть
         if source_file:
-            json_path = os.path.splitext(source_file)[0] + ".json"
+            json_path_std = os.path.splitext(source_file)[0] + ".json"
+            json_path_ext = source_file + ".json"
+            use_double_ext_json = os.path.exists(json_path_ext)
+            json_path = json_path_ext if use_double_ext_json else json_path_std
             if os.path.exists(json_path):
-                target_json = os.path.splitext(target_file)[0] + ".json"
+                target_json = (target_file + ".json") if use_double_ext_json else (os.path.splitext(target_file)[0] + ".json")
                 try:
                     shutil.copy2(json_path, target_json)
                     operation_log.append({
@@ -1084,6 +1095,7 @@ async def transfer_source(
                         "status": "success"
                     })
                     try:
+                        os.chmod(json_path, stat.S_IWRITE)
                         os.remove(json_path)
                         operation_log.append({
                             "type": "file_delete",
@@ -1109,9 +1121,12 @@ async def transfer_source(
         
         # Переносим .txt метаданные если есть
         if source_file:
-            txt_path = os.path.splitext(source_file)[0] + ".txt"
+            txt_path_std = os.path.splitext(source_file)[0] + ".txt"
+            txt_path_ext = source_file + ".txt"
+            use_double_ext_txt = os.path.exists(txt_path_ext)
+            txt_path = txt_path_ext if use_double_ext_txt else txt_path_std
             if os.path.exists(txt_path):
-                target_txt = os.path.splitext(target_file)[0] + ".txt"
+                target_txt = (target_file + ".txt") if use_double_ext_txt else (os.path.splitext(target_file)[0] + ".txt")
                 try:
                     shutil.copy2(txt_path, target_txt)
                     operation_log.append({
@@ -1121,6 +1136,7 @@ async def transfer_source(
                         "status": "success"
                     })
                     try:
+                        os.chmod(txt_path, stat.S_IWRITE)
                         os.remove(txt_path)
                         operation_log.append({
                             "type": "file_delete",
@@ -1143,6 +1159,51 @@ async def transfer_source(
                         "status": "error",
                         "error": str(e)
                     })
+        
+        # Переносим multi-part файлы (extra_files)
+        extra_files_json = book.get("extra_files", "")
+        if extra_files_json:
+            try:
+                extra_files = json.loads(extra_files_json)
+            except (json.JSONDecodeError, TypeError):
+                extra_files = []
+            for extra_rel in extra_files:
+                extra_source = os.path.normpath(os.path.join(source_path, extra_rel))
+                extra_target = os.path.normpath(os.path.join(target_path, extra_rel))
+                if os.path.exists(extra_source):
+                    try:
+                        os.makedirs(os.path.dirname(extra_target), exist_ok=True)
+                        shutil.copy2(extra_source, extra_target)
+                        operation_log.append({
+                            "type": "file_copy",
+                            "source": extra_source,
+                            "target": extra_target,
+                            "status": "success"
+                        })
+                        try:
+                            os.chmod(extra_source, stat.S_IWRITE)
+                            os.remove(extra_source)
+                            operation_log.append({
+                                "type": "file_delete",
+                                "path": extra_source,
+                                "status": "success"
+                            })
+                            deleted_originals += 1
+                        except Exception as e:
+                            operation_log.append({
+                                "type": "file_delete",
+                                "path": extra_source,
+                                "status": "error",
+                                "error": str(e)
+                            })
+                    except Exception as e:
+                        operation_log.append({
+                            "type": "file_copy",
+                            "source": extra_source,
+                            "target": extra_target,
+                            "status": "error",
+                            "error": str(e)
+                        })
         
         transferred += 1
         successful_book_ids.append(book_row["id"])
@@ -1180,9 +1241,12 @@ async def transfer_source(
             new_relative_path = os.path.join(category_path, os.path.basename(source_file)) if category_path else os.path.basename(source_file)
             new_file_path = os.path.join(target_dir, os.path.basename(source_file))
             
+            old_cover = book_row["cover_path"] or ""
+            new_cover_path = os.path.join(target_dir, os.path.basename(old_cover)) if old_cover else ""
+            
             await db.execute(
-                """UPDATE books SET source_id = ?, file_path = ?, relative_path = ?, is_available = 1 WHERE id = ?""",
-                (new_source_id if is_new_target else target_source_id, new_file_path, new_relative_path, book_row["id"])
+                """UPDATE books SET source_id = ?, file_path = ?, relative_path = ?, cover_path = ?, is_available = 1 WHERE id = ?""",
+                (new_source_id if is_new_target else target_source_id, new_file_path, new_relative_path, new_cover_path, book_row["id"])
             )
     await db.commit()
     
@@ -1431,6 +1495,7 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
                 category_id = COALESCE(?, category_id),
                 language = COALESCE(?, language),
                 source_url = COALESCE(?, source_url),
+                extra_files = COALESCE(?, extra_files),
                 is_available = 1,
                 last_seen = CURRENT_TIMESTAMP
             WHERE id = ?
@@ -1449,6 +1514,7 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
                 book_data.get("category_id"),
                 book_data.get("language"),
                 book_data.get("source_url"),
+                book_data.get("extra_files", ""),
                 book_id,
             ),
         )
@@ -1462,8 +1528,8 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
                 title, author, publisher, isbn, year, pages,
                 format, file_size, description, file_path, relative_path,
                 cover_path, category_id, source_id, language, source_url,
-                is_available, is_new_arrival, last_seen
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP)
+                extra_files, is_available, is_new_arrival, last_seen
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, CURRENT_TIMESTAMP)
             """,
             (
                 book_data.get("title", ""),
@@ -1482,6 +1548,7 @@ async def upsert_book_preserve(db: aiosqlite.Connection, book_data: dict):
                 book_data.get("source_id"),
                 book_data.get("language", "ru"),
                 book_data.get("source_url", ""),
+                book_data.get("extra_files", ""),
             ),
         )
         await db.commit()
@@ -1613,14 +1680,45 @@ async def move_book_files(db: aiosqlite.Connection, book_id: int, new_category_i
     for ext in extensions_to_move:
         if ext == old_ext:
             continue
-        old附属 = os.path.join(old_dir, f"{old_filename}{ext}")
-        new附属 = os.path.join(new_dir, f"{old_filename}{ext}")
-        if os.path.exists(old附属):
+        old_extra_std = os.path.join(old_dir, f"{old_filename}{ext}")
+        old_extra_ext = os.path.join(old_dir, f"{old_base}{ext}")
+        old_extra = old_extra_ext if os.path.exists(old_extra_ext) else old_extra_std
+        new_extra = os.path.join(new_dir, f"{old_base}{ext}") if os.path.exists(old_extra_ext) else os.path.join(new_dir, f"{old_filename}{ext}")
+        if os.path.exists(old_extra):
             try:
-                os.rename(old附属, new附属)
+                os.rename(old_extra, new_extra)
             except FileExistsError:
-                os.remove(new附属)
-                os.rename(old附属, new附属)
+                os.remove(new_extra)
+                os.rename(old_extra, new_extra)
+
+    # Переносим multi-part файлы (extra_files)
+    extra_files_json = book.get("extra_files", "")
+    if extra_files_json:
+        try:
+            extra_files = json.loads(extra_files_json)
+        except (json.JSONDecodeError, TypeError):
+            extra_files = []
+        book_dir = os.path.dirname(old_relative_path) if old_relative_path else ""
+        new_extra_rel_paths = []
+        for extra_rel in extra_files:
+            old_extra_path = os.path.normpath(os.path.join(source_base_path, extra_rel))
+            extra_filename = os.path.basename(extra_rel)
+            new_extra_path = os.path.normpath(os.path.join(new_dir, extra_filename))
+            new_extra_rel = os.path.join(new_category_name, extra_filename).replace("\\", "/")
+            if os.path.exists(old_extra_path):
+                try:
+                    os.rename(old_extra_path, new_extra_path)
+                except FileExistsError:
+                    os.remove(new_extra_path)
+                    os.rename(old_extra_path, new_extra_path)
+            new_extra_rel_paths.append(new_extra_rel)
+        if new_extra_rel_paths:
+            extra_files_json = json.dumps(new_extra_rel_paths)
+            await db.execute(
+                "UPDATE books SET extra_files = ? WHERE id = ?",
+                (extra_files_json, book_id)
+            )
+            await db.commit()
 
     return {
         "success": True,

@@ -5,6 +5,7 @@ import os
 import logging
 import asyncio
 import json
+import re
 
 from app.database import (
     get_db,
@@ -15,6 +16,7 @@ from app.database import (
     delete_source,
     update_source_scan_time,
     get_books_by_source,
+    get_books_by_source_all,
     check_source_availability,
     transfer_source as db_transfer_source,
     get_source_transfer_info,
@@ -387,11 +389,201 @@ async def transfer_source(
             "deleted_originals": result.get("deleted_originals", 0),
             "errors_count": result.get("errors_count", 0),
             "errors": result.get("errors", []),
-            "operation_log_summary": [
-                {"type": op["type"], "status": op["status"]}
-                for op in result.get("operation_log", [])[-50:]
-            ]
+            "operation_log": result.get("operation_log", [])
         },
         "api"
     )
     return result
+
+
+@router.post("/{source_id}/anomalies")
+async def find_source_anomalies(
+    source_id: int, db: aiosqlite.Connection = Depends(get_db)
+):
+    """Сканирование хранилища на аномалии: файлы не в БД, артефакты, мусор."""
+    source = await get_source_by_id(db, source_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source not found")
+
+    directory = source.get("path", "")
+    if not directory or not os.path.exists(directory):
+        raise HTTPException(
+            status_code=400, detail=f"Source path does not exist: {directory}"
+        )
+
+    source_name = source.get("name", "unknown")
+
+    # Collect all known DB paths and stems
+    db_books = await get_books_by_source_all(db, source_id)
+    db_paths = set()
+    known_extra = set()
+    db_stems = set()
+
+    for book in db_books:
+        rel = book.get("relative_path", "")
+        if rel:
+            rel = rel.replace("\\", "/")
+            db_paths.add(rel)
+            stem = os.path.splitext(rel)[0]
+            db_stems.add(stem)
+            stem_clean = re.sub(r"\.part\d+$", "", stem)
+            if stem_clean != stem:
+                db_stems.add(stem_clean)
+
+        extra = book.get("extra_files", "")
+        if extra:
+            try:
+                for ef in json.loads(extra):
+                    known_extra.add(ef.replace("\\", "/"))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    from config import SUPPORTED_FORMATS, COVER_EXTENSIONS
+
+    metadata_exts = {"txt", "json", "html", "dusd"}
+    all_known_exts = set(SUPPORTED_FORMATS) | metadata_exts | set(COVER_EXTENSIONS)
+
+    anomalies = []
+    empty_dirs = []
+    scanned_files = 0
+
+    for root, dirs, files in os.walk(directory):
+        dirs[:] = [d for d in dirs if not d.startswith(".")]
+
+        rel_dir = os.path.relpath(root, directory).replace("\\", "/")
+        if rel_dir == ".":
+            rel_dir = ""
+
+        # Check empty directories
+        if not files and not dirs and rel_dir:
+            empty_dirs.append(rel_dir)
+
+        for filename in files:
+            if filename.startswith("."):
+                continue
+
+            scanned_files += 1
+            filepath = os.path.join(root, filename)
+            rel_path = os.path.relpath(filepath, directory).replace("\\", "/")
+
+            # Skip known books and extra files
+            if rel_path in db_paths or rel_path in known_extra:
+                continue
+
+            size = os.path.getsize(filepath)
+            file_lower = filename.lower()
+
+            # Multi-part orphan: .z01, .z02 ...
+            if re.search(r'\.z\d{2}$', file_lower):
+                anomalies.append({
+                    "type": "multi_part_orphan",
+                    "type_label": "Фрагмент многотомного архива",
+                    "path": rel_path, "size": size,
+                    "description": "Файл .zxx — часть многотомного архива без основного тома"
+                })
+                continue
+
+            # RAR multi-part orphan: .part2.rar, .part3.rar ...
+            if ".part" in file_lower and file_lower.endswith(".rar"):
+                anomalies.append({
+                    "type": "multi_part_orphan",
+                    "type_label": "Фрагмент многотомного RAR",
+                    "path": rel_path, "size": size,
+                    "description": "Файл .partN.rar без основного .part1.rar"
+                })
+                continue
+
+            # 7z split orphan: .7z.002, .7z.003 ...
+            m_7z = re.match(r'^(.+\.7z)\.(\d{3})$', file_lower)
+            if m_7z and m_7z.group(2) != '001':
+                anomalies.append({
+                    "type": "multi_part_orphan",
+                    "type_label": "Фрагмент многотомного 7z",
+                    "path": rel_path, "size": size,
+                    "description": f"Файл .7z.{m_7z.group(2)} без основного .7z.001"
+                })
+                continue
+
+            ext = file_lower.split(".")[-1]
+
+            # Unlisted supported format (book file not in DB)
+            if ext in SUPPORTED_FORMATS:
+                anomalies.append({
+                    "type": "unlisted_supported",
+                    "type_label": "Неучтённая книга",
+                    "path": rel_path, "size": size,
+                    "description": f"Файл формата .{ext} есть в хранилище, но отсутствует в базе данных"
+                })
+                continue
+
+            # Metadata files (.txt, .json, .html, .dusd)
+            if ext in metadata_exts:
+                base = os.path.splitext(rel_path)[0]
+                base2 = os.path.splitext(base)[0]
+                has_book = base in db_stems or base2 in db_stems
+
+                if not has_book:
+                    is_double = any(base.endswith(f".{f}") for f in SUPPORTED_FORMATS)
+                    if is_double:
+                        anomalies.append({
+                            "type": "double_ext_metadata",
+                            "type_label": "Метаданные с двойным расширением",
+                            "path": rel_path, "size": size,
+                            "description": f"Файл метаданных с двойным расширением (.{ext}) — вероятно, остался после перемещения книги"
+                        })
+                    else:
+                        anomalies.append({
+                            "type": "metadata_orphan",
+                            "type_label": "Метаданные без книги",
+                            "path": rel_path, "size": size,
+                            "description": f"Файл метаданных (.{ext}) не имеет соответствующей книги в базе"
+                        })
+                continue
+
+            # .dusd files
+            if ext == "dusd":
+                anomalies.append({
+                    "type": "dusd_file",
+                    "type_label": "Файл Download Master",
+                    "path": rel_path, "size": size,
+                    "description": "Файл .dusd — артефакт программы Download Master"
+                })
+                continue
+
+            # Cover files without matching book
+            if ext in COVER_EXTENSIONS:
+                anomalies.append({
+                    "type": "orphan_cover",
+                    "type_label": "Обложка без книги",
+                    "path": rel_path, "size": size,
+                    "description": f"Файл обложки (.{ext}) не имеет соответствующей книги в базе"
+                })
+                continue
+
+            # Unknown / unrecognized file type
+            if ext not in all_known_exts:
+                anomalies.append({
+                    "type": "unknown_type",
+                    "type_label": "Неизвестный тип",
+                    "path": rel_path, "size": size,
+                    "description": f"Файл неизвестного типа (.{ext}) не относится к поддерживаемым форматам"
+                })
+
+    # Aggregate summary
+    summary = {}
+    for a in anomalies:
+        t = a["type"]
+        summary[t] = summary.get(t, 0) + 1
+
+    return {
+        "success": True,
+        "source_id": source_id,
+        "source_name": source_name,
+        "directory": directory,
+        "scanned_files": scanned_files,
+        "db_books_count": len(db_paths),
+        "anomalies": anomalies,
+        "empty_directories": sorted(empty_dirs),
+        "summary": summary,
+        "total_anomalies": len(anomalies),
+    }
