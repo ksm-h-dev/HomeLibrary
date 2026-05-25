@@ -71,6 +71,10 @@
         .modal .form-group { margin-bottom: 15px; }
         .modal .form-group label { display: block; margin-bottom: 5px; font-size: 13px; color: #666; }
         .modal .form-group input, .modal .form-group select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        .modal .isbn-wrapper { display: flex; gap: 4px; align-items: stretch; }
+        .modal .isbn-wrapper input { flex: 1; min-width: 0; }
+        .modal .isbn-btn { width: 34px; min-width: 34px; padding: 0; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; cursor: pointer; font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; color: #555; }
+        .modal .isbn-btn:hover { background: #e8e8e8; border-color: #bbb; }
         .modal .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; min-height: 120px; max-height: 150px; overflow-y: auto; }
         .modal .buttons { display: flex; gap: 10px; margin-top: 20px; }
         .modal .buttons button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
@@ -300,7 +304,10 @@
             </div>
             <div class="form-group">
                 <label>ISBN</label>
-                <input type="text" id="editIsbn">
+                <div class="isbn-wrapper">
+                    <input type="text" id="editIsbn">
+                    <button class="isbn-btn" onclick="searchIsbn()" title="Поиск по ISBN">...</button>
+                </div>
             </div>
             <div class="form-group">
                 <label>Год издания</label>
@@ -1319,6 +1326,19 @@
                     return;
                 }
 
+                if (pendingLookupMeta) {
+                    try {
+                        await fetch('/api/books/' + editingBookId + '/save-metadata', {
+                            method: 'POST',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(pendingLookupMeta)
+                        });
+                    } catch (e) {
+                        console.warn('Failed to save lookup metadata:', e);
+                    }
+                    pendingLookupMeta = null;
+                }
+
                 closeModal();
                 loadBooks();
                 loadStats();
@@ -1326,6 +1346,182 @@
                 console.error(e);
                 showMessageModal('Ошибка', 'Ошибка сохранения');
             }
+        }
+
+        // pendingLookupMeta: хранит результат последнего поиска по коду (ISBN/DOI/ISSN).
+        // Заполняется функцией fillBookFromLookup(), сохраняется в .lookup.json
+        // при вызове saveBook().
+        let pendingLookupMeta = null;
+
+        /**
+         * normalizeCode — удаляет префиксы ISBN/DOI/ISSN, дефисы и пробелы.
+         * Пример: "ISBN 978-5-12345-678-9" → "9785123456789"
+         */
+        function normalizeCode(raw) {
+            let code = raw.trim();
+            code = code.replace(/^(ISBN[-:]?\s*|DOI[-:]?\s*|ISSN[-:]?\s*)/i, '');
+            code = code.replace(/[-\s]/g, '');
+            return code;
+        }
+
+        /**
+         * detectCodeType — определяет тип идентификатора по нормализованной строке.
+         *   isbn13: 13 цифр, начинается с 978/979
+         *   isbn10: 9 цифр + контрольный символ (цифра/X)
+         *   issn:   8 цифр (после удаления дефисов)
+         *   doi:    префикс 10.xxxx/
+         *   bbk:    начинается с русской буквы + цифры
+         *   udk:    цифры с точками, разделённые +-/:()=
+         *   lcc:    латинская буква + цифра
+         *   grnti:  2.2.2 (три двузначных числа через точки)
+         */
+        function detectCodeType(normalized) {
+            if (/^97[89]\d{10}$/.test(normalized)) return 'isbn13';
+            if (/^\d{9}[\dX]$/.test(normalized))   return 'isbn10';
+            if (/^\d{7}[\dX]$/.test(normalized))   return 'issn';
+            if (/^10\.\d{4,}\//.test(normalized))   return 'doi';
+            if (/^[А-ЯЁ][\d().,;:+\-/= ]/.test(normalized)) return 'bbk';
+            if (/^[\d]+(\.[\d]+)*[+\-/:()=]*$/.test(normalized)) return 'udk';
+            if (/^[A-Z]\d/.test(normalized)) return 'lcc';
+            if (/^\d{2}\.\d{2}\.\d{2}$/.test(normalized)) return 'grnti';
+            return 'unknown';
+        }
+
+        /**
+         * searchIsbn — главная функция поиска по коду.
+         * Вызывается кнопкой "..." рядом с полем ISBN.
+         *
+         * Алгоритм:
+         * 1. Берёт сырой текст из поля editIsbn
+         * 2. normalizeCode() → detectCodeType()
+         * 3. Если тип неизвестен (UDK/BBK/LCC/GRNTI) → promptCodeType() — модалка ручного выбора
+         * 4. Если тип известен (ISBN/DOI/ISSN) → POST /api/lookup (серверный прокси)
+         * 5. При успехе → fillBookFromLookup() заполняет форму
+         */
+        async function searchIsbn() {
+            const raw = document.getElementById('editIsbn').value.trim();
+            if (!raw) {
+                showMessageModal('Поиск', 'Введите код (ISBN, DOI, ISSN) для поиска');
+                return;
+            }
+
+            const normalized = normalizeCode(raw);
+            const type = detectCodeType(normalized);
+
+            // Для неизвестных/классификационных типов показываем модалку выбора
+            if (type === 'unknown' || type === 'bbk' || type === 'udk' || type === 'lcc' || type === 'grnti') {
+                promptCodeType(raw, type);
+                return;
+            }
+
+            const res = await fetch('/api/lookup', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({code: raw})
+            });
+            const data = await res.json();
+
+            if (data.error) {
+                showMessageModal('Результат поиска', 'Не найдено: ' + data.error);
+                return;
+            }
+
+            fillBookFromLookup(data);
+        }
+
+        /**
+         * fillBookFromLookup — заполняет поля формы редактирования данными из API.
+         * Сохраняет сырой ответ API в pendingLookupMeta для последующей записи в .lookup.json.
+         */
+        function fillBookFromLookup(data) {
+            if (data.title)       document.getElementById('editTitle').value = data.title;
+            if (data.author)      document.getElementById('editAuthor').value = data.author;
+            if (data.publisher)   document.getElementById('editPublisher').value = data.publisher;
+            if (data.year)        document.getElementById('editYear').value = data.year;
+            if (data.pages)       document.getElementById('editPages').value = data.pages;
+            if (data.isbn)        document.getElementById('editIsbn').value = data.isbn;
+            if (data.description) document.getElementById('editDescription').value = data.description;
+
+            // Сохраняем метаданные для последующей записи в .lookup.json
+            pendingLookupMeta = {
+                lookup_source: data.source,
+                lookup_code: data.detected_type,
+                source_url: data.source_url || '',
+                cover_url: data.cover_url || '',
+                raw: data.raw || null,
+            };
+
+            showNotification('Данные заполнены из ' + (data.source || 'внешнего источника'));
+        }
+
+        /**
+         * promptCodeType — показывает модалку с выбором типа кода, когда он не распознан.
+         * Используется для BBK/UDK/LCC/GRNTI и полностью неизвестных кодов.
+         * Пользователь выбирает тип, нажимает "Поиск" → retryLookupWithType().
+         */
+        function promptCodeType(raw, detectedType) {
+            const knownTypes = [
+                {value: 'isbn', label: 'ISBN'},
+                {value: 'doi', label: 'DOI'},
+                {value: 'issn', label: 'ISSN'},
+                {value: 'bbk', label: 'ББК'},
+                {value: 'udk', label: 'УДК'},
+                {value: 'lcc', label: 'LCC / CLC'},
+                {value: 'grnti', label: 'ГРНТИ'},
+            ];
+
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay active';
+            modal.innerHTML = `
+                <div class="modal">
+                    <h3>Тип кода не определён</h3>
+                    <p>Не удалось распознать тип: <strong>${escapeHtml(raw)}</strong></p>
+                    <div class="form-group">
+                        <label>Укажите тип вручную:</label>
+                        <select id="manualCodeType">
+                            ${knownTypes.map(t => `<option value="${t.value}">${t.label}</option>`).join('')}
+                            <option value="skip">Пропустить</option>
+                        </select>
+                    </div>
+                    <div class="buttons">
+                        <button class="save-btn" onclick="retryLookupWithType()">Поиск</button>
+                        <button class="cancel-btn" onclick="document.body.removeChild(this.closest('.modal-overlay'))">Отмена</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+
+        /**
+         * retryLookupWithType — повторный поиск после ручного выбора типа кода.
+         * Вызывается из модалки promptCodeType.
+         * Отправляет код на сервер; при успехе — fillBookFromLookup().
+         */
+        async function retryLookupWithType() {
+            const select = document.getElementById('manualCodeType');
+            const type = select.value;
+            if (type === 'skip') {
+                const overlay = select.closest('.modal-overlay');
+                if (overlay) overlay.remove();
+                return;
+            }
+
+            const raw = document.getElementById('editIsbn').value.trim();
+            const res = await fetch('/api/lookup', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({code: raw})
+            });
+            const data = await res.json();
+
+            const overlay = select.closest('.modal-overlay');
+            if (overlay) overlay.remove();
+
+            if (data.error) {
+                showMessageModal('Результат поиска', 'Не найдено: ' + data.error);
+                return;
+            }
+            fillBookFromLookup(data);
         }
 
         function escapeHtml(text) {

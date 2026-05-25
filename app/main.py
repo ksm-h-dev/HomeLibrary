@@ -7,7 +7,7 @@ import logging
 
 from app.database import init_db, get_all_sources
 from app.routers import books, search, sources
-from app.routers import welcome
+from app.routers import welcome, lookup
 from config import SERVER_HOST, SERVER_PORT, DEFAULT_SOURCE_PATH, DATABASE_URL
 import aiosqlite
 
@@ -45,6 +45,7 @@ app.include_router(books.router)
 app.include_router(search.router)
 app.include_router(sources.router)
 app.include_router(welcome.router)
+app.include_router(lookup.router)
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "web")
 

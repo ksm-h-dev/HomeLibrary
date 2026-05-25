@@ -38,6 +38,13 @@
 │  │   │   - Parse .txt metadata      │                   │  │
 │  │   │   - File system scan         │                   │  │
 │  │   └──────────────────────────────┘                   │  │
+│  │   ┌──────────────────────────────┐                   │  │
+│  │   │        Lookup Service        │                   │  │
+│  │   │   - normalize_code()         │                   │  │
+│  │   │   - detect_code_type()      │                   │  │
+│  │   │   - lookup_isbn/doi/issn()  │                   │  │
+│  │   │   - OpenLibrary / CrossRef   │                   │  │
+│  │   └──────────────────────────────┘                   │  │
 │  └─────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
                             │
@@ -153,7 +160,8 @@
 - `app/main.py` - точка входа, конфигурация приложения, startup events
 - `app/database.py` - SQLite + FTS5, логика доступности, новые поступления
 - `app/models.py` - Pydantic модели для валидации
-- `app/routers/books.py` - эндпоинты для работы с книгами (фильтр availability)
+- `app/routers/books.py` - эндпоинты для работы с книгами (фильтр availability, save-metadata)
+- `app/routers/lookup.py` - эндпоинты поиска метаданных по коду (POST /api/lookup, GET /by-classification)
 - `app/routers/search.py` - эндпоинты для поиска (фильтр availability)
 - `app/routers/sources.py` - эндпоинты для хранилищ (CRUD, сканирование, перенос с прогресс-баром)
 - `app/routers/welcome.py` - настройка, about page API, инициализация библиотеки
@@ -190,7 +198,29 @@
 - Фильтрация - по формату, году, категории
 - Комбинированный поиск
 
-### 5. Веб-интерфейс (web/index.html)
+### 5. Lookup-сервис (services/lookup.py)
+
+Сервис для поиска метаданных по идентификаторам книг через внешние API.
+
+**Архитектура:**
+1. `normalize_code()` — очистка от префиксов ISBN/DOI/ISSN и разделителей
+2. `detect_code_type()` — определение типа (isbn13, isbn10, doi, issn, unknown)
+3. `lookup_code()` — главный диспетчер, вызывает нужный API по типу
+4. `lookup_isbn()` → OpenLibrary API
+5. `lookup_doi()` → CrossRef API
+6. `lookup_issn()` → ISSN Portal API
+
+**Формат метаданных (.lookup.json):**
+```
+{source_path}/{category}/{book_filename}.lookup.json
+```
+
+Содержит: lookup_source, lookup_code, source_url, cover_url, raw (сырой ответ API), looked_up_at.
+
+**Endpoint:** `POST /api/lookup` — серверный прокси (предотвращает CORS-проблемы)
+**Endpoint:** `POST /api/books/{id}/save-metadata` — запись .lookup.json
+
+### 6. Веб-интерфейс (web/index.html)
 
 - SPA на чистом JavaScript
 - Fetch API для обращения к бэкенду

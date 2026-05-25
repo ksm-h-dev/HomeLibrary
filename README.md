@@ -19,6 +19,9 @@
 - **Сортировка** по дате, названию, автору, году, страницам
 - **Фильтрация** по формату, категории, году, хранилищу, наличию
 - **Экспорт метаданных** в .json при редактировании книги
+- **Поиск метаданных по коду** — ISBN/DOI/ISSN через OpenLibrary, CrossRef, ISSN Portal
+- **Автоопределение типа кода** (ISBN-10, ISBN-13, DOI, ISSN, УДК, ББК, LCC, ГРНТИ)
+- **JSON sidecar (.lookup.json)** — сохранение сырых данных API при поиске по коду
 - **Перемещение файлов** книги (книга + txt/json + обложка + extra_files)
 - **Приоритет .json** метаданных над .txt при импорте
 - **Расширенные форматы обложек** (bmp, webp, tiff)
@@ -76,12 +79,14 @@ Library/
 │   ├── database.py      # SQLite + FTS5, логика доступности
 │   ├── models.py        # Pydantic модели
 │   └── routers/
-│       ├── books.py     # API книг
+│       ├── books.py     # API книг (включая save-metadata)
+│       ├── lookup.py    # API поиска метаданных по коду
 │       ├── search.py    # API поиска
 │       ├── sources.py   # API хранилищ
 │       └── welcome.py   # Настройка и About API
 ├── services/
 │   ├── importer.py     # Импорт, сканирование, новые поступления, multi-part архивы
+│   ├── lookup.py       # Поиск по коду (OpenLibrary, CrossRef, ISSN Portal)
 │   ├── drives.py       # Обнаружение дисков (WMI)
 │   ├── audit.py        # Аудит-логи
 │   └── progress.py     # Прогресс-трекер SSE
@@ -151,6 +156,9 @@ SERVER_PORT = 8000               # Порт сервера
 | POST | `/api/setup/skip` | Пропуск настройки |
 | POST | `/api/setup/initialize` | Сброс библиотеки (удаляет книги + хранилища + категории) |
 | POST | `/api/books/{id}/open` | Открыть файл книги |
+| POST | `/api/books/{id}/save-metadata` | Сохранить .lookup.json (результат поиска по коду) |
+| POST | `/api/lookup` | Поиск метаданных по коду (ISBN/DOI/ISSN) через внешние API |
+| GET | `/api/lookup/by-classification` | Поиск книг по коду в локальной БД |
 | GET | `/api/audit-log` | Просмотр аудит-логов (если включено) |
 
 ### Параметры /api/books
@@ -282,6 +290,80 @@ pip install pywin32
 1. Убедитесь, что файрвол разрешает входящие соединения на порт 8000
 2. Запустите сервер с `host = "0.0.0.0"`
 3. Другие компьютеры в сети могут получить доступ по IP или имени компьютера
+
+## Поиск метаданных по коду (lookup)
+
+Система позволяет находить метаданные книги по идентификатору (ISBN, DOI, ISSN) через внешние API.
+
+### Как это работает
+
+1. Пользователь вводит код в поле ISBN и нажимает кнопку `...`
+2. **На клиенте** (`detectCodeType`) определяется тип кода:
+   - `isbn10` / `isbn13` — 10- или 13-значный ISBN
+   - `doi` — цифровой идентификатор объекта
+   - `issn` — международный сериальный номер
+   - `bbk` / `udk` / `lcc` / `grnti` — классификационные коды (поиск только локальный)
+3. **На сервере** (`services/lookup.py`) запрос проксируется в соответствующий API:
+   - **ISBN** → [OpenLibrary](https://openlibrary.org) (`/api/books?bibkeys=ISBN:...`)
+   - **DOI** → [CrossRef](https://crossref.org) (`/works/{doi}`)
+   - **ISSN** → [ISSN Portal](https://portal.issn.org) (`/api/issn?value=...`)
+4. Сервер возвращает структурированные данные (title, author, publisher, year, pages, description)
+5. **На клиенте** поля формы редактирования заполняются автоматически
+6. При сохранении книги сырой ответ API сохраняется в `{book}.lookup.json` рядом с файлом книги
+
+### Формат .lookup.json
+
+```json
+{
+  "lookup_source": "openlibrary",
+  "lookup_code": "isbn13",
+  "source_url": "https://openlibrary.org/isbn/9780596007126",
+  "cover_url": "https://covers.openlibrary.org/b/id/123456-L.jpg",
+  "raw": { ... },
+  "looked_up_at": "2026-05-25T15:30:00"
+}
+```
+
+### API Endpoints
+
+| Метод | Endpoint | Описание |
+|-------|----------|----------|
+| POST | `/api/lookup` | Поиск кода во внешних API |
+| GET | `/api/lookup/by-classification?code=...` | Поиск кода в локальной БД (LIKE) |
+
+**POST /api/lookup**
+
+Request:
+```json
+{"code": "ISBN 978-5-12345-678-9"}
+```
+
+Response:
+```json
+{
+  "detected_type": "isbn13",
+  "title": "Название книги",
+  "author": "Автор",
+  "publisher": "Издательство",
+  "year": 2024,
+  "pages": 300,
+  "isbn": "9785123456789",
+  "description": "Тема; Раздел; ...",
+  "cover_url": "https://...",
+  "source_url": "https://openlibrary.org/isbn/9785123456789",
+  "source": "openlibrary",
+  "raw": { ... }
+}
+```
+
+### Клиентская часть
+
+- `searchIsbn()` — точка входа (кнопка `...`)
+- `normalizeCode()` — очистка кода от префиксов и разделителей
+- `detectCodeType()` — автоопределение типа
+- `promptCodeType()` — модалка ручного выбора для неизвестных типов
+- `fillBookFromLookup()` — заполнение формы + сохранение `pendingLookupMeta`
+- `saveBook()` — при сохранении отправляет `pendingLookupMeta` в `/save-metadata`
 
 ## Лицензия
 

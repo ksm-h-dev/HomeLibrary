@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
-from typing import Optional
+from typing import Optional, Any
+from pydantic import BaseModel
 import aiosqlite
 import os
+import json
 import subprocess
 import platform
 import logging
+from pathlib import Path
 
 from app.database import (
     get_db,
@@ -147,3 +150,82 @@ async def cleanup_unavailable(db: aiosqlite.Connection = Depends(get_db)):
         "api"
     )
     return {"deleted": count, "message": f"Удалено {count} недоступных книг"}
+
+
+class SaveRichMetadataRequest(BaseModel):
+    """Запрос на сохранение расширенных метаданных книги (результат поиска по коду).
+
+    lookup_source — источник данных ("openlibrary", "crossref", "issn")
+    lookup_code  — тип найденного кода ("isbn13", "doi", "issn")
+    raw          — сырой ответ внешнего API (сохраняется в .lookup.json)
+    source_url   — ссылка на страницу книги в источнике
+    cover_url    — URL обложки из внешнего источника
+    """
+    lookup_source: Optional[str] = None
+    lookup_code: Optional[str] = None
+    raw: Optional[Any] = None
+    source_url: Optional[str] = None
+    cover_url: Optional[str] = None
+
+
+@router.post("/{book_id}/save-metadata")
+async def save_book_rich_metadata(
+    book_id: int,
+    body: SaveRichMetadataRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """
+    Сохраняет расширенные метаданные книги в .lookup.json рядом с файлом книги.
+
+    Формат файла: {book_filename}.lookup.json
+    Содержит:
+      - lookup_source — откуда взяты данные (openlibrary/crossref/issn)
+      - lookup_code — какой тип кода использовался
+      - source_url — ссылка на источник
+      - cover_url — URL обложки
+      - raw — полный сырой ответ от внешнего API
+      - looked_up_at — таймстемп поиска
+
+    Создаётся при сохранении книги (saveBook в index.html),
+    если до этого был успешный поиск через searchIsbn().
+    Файл сохраняется рядом с книгой: {source_path}/{category}/{book}.lookup.json
+    """
+    book = await get_book_by_id(db, book_id)
+    if not book:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    source_base_path = book.get("source_name", "")
+
+    # Получаем базовый путь хранилища из БД
+    cursor = await db.execute("SELECT path FROM sources WHERE id = ?", (book.get("source_id"),))
+    source_row = await cursor.fetchone()
+    if source_row:
+        source_base_path = source_row[0]
+
+        # Определяем путь к .lookup.json на основе пути к файлу книги
+        book_relative_path = book.get("relative_path", "")
+        book_dir = os.path.dirname(book_relative_path) if book_relative_path else ""
+        book_filename = os.path.splitext(os.path.basename(book.get("file_path", "book")))[0]
+
+        json_dir = os.path.join(source_base_path, book_dir) if book_dir else source_base_path
+        json_path = os.path.join(json_dir, f"{book_filename}.lookup.json")
+
+        os.makedirs(json_dir, exist_ok=True)
+
+        # Составляем структуру .lookup.json
+        entry = {
+            "lookup_source": body.lookup_source,
+            "lookup_code": body.lookup_code,
+            "source_url": body.source_url,
+            "cover_url": body.cover_url,
+            "raw": body.raw,
+            "looked_up_at": __import__("datetime").datetime.now().isoformat(),
+        }
+
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(entry, f, ensure_ascii=False, indent=2, default=str)
+
+        logger.info("Rich metadata saved to %s for book ID %s", json_path, book_id)
+        return {"success": True, "path": json_path}
+
+    raise HTTPException(status_code=500, detail="Source not found")
