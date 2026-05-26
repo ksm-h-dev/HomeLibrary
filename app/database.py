@@ -1720,6 +1720,14 @@ async def move_book_files(db: aiosqlite.Connection, book_id: int, new_category_i
             )
             await db.commit()
 
+    # Обновляем file_path и relative_path в БД, если файл был перемещён
+    if old_file_path != new_file_path:
+        await db.execute(
+            "UPDATE books SET file_path = ?, relative_path = ? WHERE id = ?",
+            (new_file_path, new_relative_path, book_id)
+        )
+        await db.commit()
+
     return {
         "success": True,
         "old_path": old_file_path,

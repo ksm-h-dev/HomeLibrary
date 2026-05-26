@@ -1,11 +1,11 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 import os
 import logging
 
-from app.database import init_db, get_all_sources
+from app.database import init_db, get_all_sources, get_db
 from app.routers import books, search, sources
 from app.routers import welcome, lookup
 from config import SERVER_HOST, SERVER_PORT, DEFAULT_SOURCE_PATH, DATABASE_URL
@@ -97,13 +97,35 @@ async def root():
 
 
 @app.get("/api/cover")
-async def get_cover(path: str):
+async def get_cover(path: str, db: aiosqlite.Connection = Depends(get_db)):
     import urllib.parse
     decoded_path = urllib.parse.unquote(path)
+    
+    # 1. Прямая проверка — существует ли файл по точному пути
+    if os.path.exists(decoded_path):
+        logger.debug("Found cover via exact path: %s", decoded_path)
+        return FileResponse(decoded_path)
+    
+    # 2. Поиск через cover_path в БД (по имени файла)
+    try:
+        filename = os.path.basename(decoded_path)
+        stem = os.path.splitext(filename)[0]
+        cursor = await db.execute(
+            "SELECT cover_path FROM books WHERE cover_path IS NOT NULL AND cover_path != '' AND cover_path LIKE ?",
+            (f"%{stem}%",)
+        )
+        row = await cursor.fetchone()
+        if row and os.path.exists(row[0]):
+            logger.debug("Found cover via DB: %s", row[0])
+            return FileResponse(row[0])
+    except Exception:
+        pass
+    
+    # 3. Сканирование директории (оригинальная логика)
     book_dir = os.path.dirname(decoded_path)
     book_stem = os.path.splitext(os.path.basename(decoded_path))[0]
     
-    logger.info("Cover request: %s", decoded_path)
+    logger.debug("Cover request: %s (dir: %s, stem: %s)", decoded_path, book_dir, book_stem)
     cover_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'tiff']
     
     if os.path.isdir(book_dir):

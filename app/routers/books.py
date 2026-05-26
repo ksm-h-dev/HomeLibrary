@@ -9,6 +9,8 @@ import subprocess
 import platform
 import logging
 from pathlib import Path
+import httpx
+import re
 
 from app.database import (
     get_db,
@@ -22,6 +24,7 @@ from app.database import (
 )
 from app.models import BookResponse, BookListResponse, BookUpdate, CategoryResponse
 from services.audit import log_audit
+from config import COVER_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +83,10 @@ async def update_book_endpoint(
     update_data = book.model_dump(exclude_unset=True, exclude_none=True)
     logger.info("Updating book ID %s: %s", book_id, update_data)
     
-    if "relative_path" in update_data or "category_id" in update_data:
+    new_cat_id = update_data.get("category_id")
+    cat_changed = new_cat_id is not None and new_cat_id != existing.get("category_id")
+    
+    if "relative_path" in update_data or cat_changed:
         export_result = await export_book_to_json(db, book_id)
         logger.info("Exported metadata to JSON for book ID %s", book_id)
         log_audit(
@@ -89,8 +95,7 @@ async def update_book_endpoint(
             "api"
         )
     
-    new_cat_id = update_data.get("category_id")
-    if new_cat_id:
+    if cat_changed:
         move_result = await move_book_files(db, book_id, new_cat_id)
         logger.info("Moved book files for book ID %s", book_id)
         log_audit(
@@ -226,6 +231,49 @@ async def save_book_rich_metadata(
             json.dump(entry, f, ensure_ascii=False, indent=2, default=str)
 
         logger.info("Rich metadata saved to %s for book ID %s", json_path, book_id)
-        return {"success": True, "path": json_path}
+
+        # Загружаем обложку, если передан cover_url
+        cover_downloaded = False
+        if body.cover_url:
+            try:
+                async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
+                    resp = await client.get(body.cover_url)
+                    if resp.status_code == 200:
+                        content_type = resp.headers.get("content-type", "")
+                        # Определяем расширение из URL или Content-Type
+                        url_ext = re.search(r'\.(\w+)(?:\?.*)?$', body.cover_url.split("/")[-1])
+                        if url_ext and url_ext.group(1).lower() in COVER_EXTENSIONS:
+                            ext = url_ext.group(1).lower()
+                        elif "jpeg" in content_type:
+                            ext = "jpg"
+                        elif "png" in content_type:
+                            ext = "png"
+                        elif "gif" in content_type:
+                            ext = "gif"
+                        elif "webp" in content_type:
+                            ext = "webp"
+                        else:
+                            ext = "jpg"
+
+                        cover_filename = f"{book_filename}.{ext}"
+                        cover_path = os.path.join(json_dir, cover_filename)
+
+                        with open(cover_path, "wb") as f:
+                            f.write(resp.content)
+
+                        # Обновляем запись в БД
+                        await db.execute(
+                            "UPDATE books SET cover_path = ?, cover_ext = ? WHERE id = ?",
+                            (cover_path, ext, book_id)
+                        )
+                        await db.commit()
+                        cover_downloaded = True
+                        logger.info("Cover downloaded to %s for book ID %s", cover_path, book_id)
+                    else:
+                        logger.warning("Cover download failed with status %s for URL %s", resp.status_code, body.cover_url)
+            except Exception as e:
+                logger.error("Cover download error for book ID %s: %s", book_id, str(e))
+
+        return {"success": True, "path": json_path, "cover_downloaded": cover_downloaded}
 
     raise HTTPException(status_code=500, detail="Source not found")

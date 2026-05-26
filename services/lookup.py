@@ -71,7 +71,8 @@ async def lookup_isbn(normalized: str) -> dict:
     API: GET https://openlibrary.org/api/books?bibkeys=ISBN:xxxxx&jscmd=data&format=json
     Извлекает: title, author(s), publisher, publish_date, pages, subjects, cover
     """
-    async with httpx.AsyncClient(timeout=15) as client:
+    headers = {"User-Agent": "HomeLibrary/1.0 (admin@homelibrary.local)"}
+    async with httpx.AsyncClient(timeout=15, headers=headers) as client:
         resp = await client.get(
             f"{OPENLIBRARY_URL}/api/books",
             params={"bibkeys": f"ISBN:{normalized}", "jscmd": "data", "format": "json"},
