@@ -4,7 +4,7 @@ import re
 import aiosqlite
 import logging
 from pathlib import Path
-from config import BOOKS_DIR, SUPPORTED_FORMATS, COVER_EXTENSIONS
+from config import SUPPORTED_FORMATS, COVER_EXTENSIONS
 
 logger = logging.getLogger(__name__)
 
@@ -558,11 +558,12 @@ async def import_from_source(
 
 async def import_library():
     from app.database import init_db, get_or_create_category, upsert_book, DATABASE_PATH
+    from config import DEFAULT_SOURCE_PATH
 
-    print(f"Scanning directory: {BOOKS_DIR}")
+    print(f"Scanning directory: {DEFAULT_SOURCE_PATH}")
     await init_db()
 
-    books = await scan_directory(BOOKS_DIR)
+    books = await scan_directory(DEFAULT_SOURCE_PATH)
     print(f"Found {len(books)} books")
 
     imported = 0

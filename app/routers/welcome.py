@@ -140,7 +140,7 @@ async def save_default_path(body: SavePathRequest):
             replacement = f'DEFAULT_SOURCE_PATH = os.getenv("LIBRARY_DEFAULT_SOURCE", r"{escaped_path}")'
 
             if re.search(pattern, content, re.MULTILINE):
-                content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+                content = re.sub(pattern, replacement, content, count=1, flags=re.MULTILINE)
             else:
                 # Add if not exists
                 content = (
@@ -308,6 +308,19 @@ async def get_audit_status():
     return {"audit_enabled": audit_is_enabled()}
 
 
+@router.post("/restart")
+async def restart_server():
+    """Restart the server to apply configuration changes."""
+    import subprocess
+    import sys
+    from config import SERVER_HOST, SERVER_PORT
+    logger.info("Restarting server by user request...")
+    subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app",
+                      "--host", SERVER_HOST, "--port", str(SERVER_PORT), "--reload"])
+    import os
+    os._exit(0)
+
+
 @router.post("/audit/toggle")
 async def toggle_audit(enable: bool = Query(...)):
     """Enable or disable detailed audit logging and save to config."""
@@ -328,25 +341,25 @@ async def toggle_audit(enable: bool = Query(...)):
         replacement = f'AUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "{str_value}").lower() == "true"  # Updated by setup'
 
         if re.search(pattern, content, re.MULTILINE):
-            content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+            content = re.sub(pattern, replacement, content, count=1, flags=re.MULTILINE)
         else:
             content += f'\nAUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "{str_value}").lower() == "true"  # Added by setup\n'
 
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(content)
 
-    # Restart server to apply new config
-    import subprocess
-    import sys
-    logger.info("Restarting server to apply AUDIT_ENABLED=%s", new_state)
-    subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app",
-                      "--host", "0.0.0.0", "--port", "8000", "--reload"])
-    import os
-    os._exit(0)
-
     log_audit(
         "audit_toggled",
         {"enabled": new_state, "previous": not new_state},
         "setup"
     )
-    return {"success": True, "audit_enabled": new_state}
+
+    # Restart server to apply new config
+    import subprocess
+    import sys
+    from config import SERVER_PORT
+    logger.info("Restarting server to apply AUDIT_ENABLED=%s", new_state)
+    subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app",
+                      "--host", "0.0.0.0", "--port", str(SERVER_PORT), "--reload"])
+    import os
+    os._exit(0)

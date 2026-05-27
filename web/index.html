@@ -1606,7 +1606,13 @@
                     });
 
                     document.getElementById('currentLibraryPath').textContent = data.selected_path;
-                    showMessageModal('Успех', 'Путь обновлен. Изменения вступят в силу после перезапуска.');
+                    showMessageModal('Успех', 'Путь обновлен. Сервер перезагружается...');
+
+                    // Restart server
+                    fetch('/api/setup/restart', {method: 'POST'}).catch(() => {});
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 3000);
                 }
             } catch (e) {
                 showMessageModal('Ошибка', 'Ошибка: ' + e.message);
