@@ -75,6 +75,9 @@
         .modal .isbn-wrapper input { flex: 1; min-width: 0; }
         .modal .isbn-btn { width: 34px; min-width: 34px; padding: 0; border: 1px solid #ddd; border-radius: 4px; background: #f5f5f5; cursor: pointer; font-size: 13px; line-height: 1; display: flex; align-items: center; justify-content: center; color: #555; }
         .modal .isbn-btn:hover { background: #e8e8e8; border-color: #bbb; }
+        .modal .isbn-btn.loading { pointer-events: none; }
+        .modal .isbn-btn.loading::after { content: ''; width: 14px; height: 14px; border: 2px solid #ccc; border-top-color: #555; border-radius: 50%; animation: isbn-spin 0.6s linear infinite; }
+        @keyframes isbn-spin { to { transform: rotate(360deg); } }
         .modal .form-group textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; min-height: 120px; max-height: 150px; overflow-y: auto; }
         .modal .buttons { display: flex; gap: 10px; margin-top: 20px; }
         .modal .buttons button { padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
@@ -1192,9 +1195,13 @@
         async function openBook(bookId) {
             try {
                 const res = await fetch('/api/books/' + bookId + '/open', {method: 'POST'});
+                const data = await res.json();
                 if (!res.ok) {
-                    const err = await res.json();
-                    showMessageModal('Ошибка', err.detail || 'Не удалось открыть файл');
+                    showMessageModal('Ошибка', data.detail || 'Не удалось открыть файл');
+                    return;
+                }
+                if (data.warning) {
+                    showMessageModal('Внимание', data.warning);
                 }
             } catch (e) {
                 console.error(e);
@@ -1326,22 +1333,18 @@
                     return;
                 }
 
-                if (pendingLookupMeta) {
-                    try {
-                        await fetch('/api/books/' + editingBookId + '/save-metadata', {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify(pendingLookupMeta)
-                        });
-                    } catch (e) {
-                        console.warn('Failed to save lookup metadata:', e);
-                    }
-                    pendingLookupMeta = null;
-                }
-
                 closeModal();
                 loadBooks();
                 loadStats();
+
+                if (pendingLookupMeta) {
+                    fetch('/api/books/' + editingBookId + '/save-metadata', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify(pendingLookupMeta)
+                    }).catch(e => console.warn('Failed to save lookup metadata:', e));
+                    pendingLookupMeta = null;
+                }
             } catch (e) {
                 console.error(e);
                 showMessageModal('Ошибка', 'Ошибка сохранения');
@@ -1408,25 +1411,35 @@
             const normalized = normalizeCode(raw);
             const type = detectCodeType(normalized);
 
-            // Для неизвестных/классификационных типов показываем модалку выбора
             if (type === 'unknown' || type === 'bbk' || type === 'udk' || type === 'lcc' || type === 'grnti') {
                 promptCodeType(raw, type);
                 return;
             }
 
-            const res = await fetch('/api/lookup', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({code: raw})
-            });
-            const data = await res.json();
+            const btn = document.querySelector('.isbn-btn');
+            btn.classList.add('loading');
 
-            if (data.error) {
-                showMessageModal('Результат поиска', 'Не найдено: ' + data.error);
-                return;
+            try {
+                const res = await fetch('/api/lookup', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({code: raw})
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    let msg = 'Не найдено: ' + data.error;
+                    if (data.fallback_suggestion) {
+                        msg += '\n\n' + data.fallback_suggestion;
+                    }
+                    showMessageModal('Результат поиска', msg);
+                    return;
+                }
+
+                fillBookFromLookup(data);
+            } finally {
+                btn.classList.remove('loading');
             }
-
-            fillBookFromLookup(data);
         }
 
         /**

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi.responses import FileResponse
 from typing import Optional, Any
 from pydantic import BaseModel
@@ -24,7 +24,7 @@ from app.database import (
 )
 from app.models import BookResponse, BookListResponse, BookUpdate, CategoryResponse
 from services.audit import log_audit
-from config import COVER_EXTENSIONS
+from config import COVER_EXTENSIONS, DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -86,15 +86,6 @@ async def update_book_endpoint(
     new_cat_id = update_data.get("category_id")
     cat_changed = new_cat_id is not None and new_cat_id != existing.get("category_id")
     
-    if "relative_path" in update_data or cat_changed:
-        export_result = await export_book_to_json(db, book_id)
-        logger.info("Exported metadata to JSON for book ID %s", book_id)
-        log_audit(
-            "book_exported",
-            {"book_id": book_id, "export_path": export_result.get("path"), "title": existing.get("title")},
-            "api"
-        )
-    
     if cat_changed:
         move_result = await move_book_files(db, book_id, new_cat_id)
         logger.info("Moved book files for book ID %s", book_id)
@@ -112,6 +103,15 @@ async def update_book_endpoint(
     
     await update_book(db, book_id, update_data)
     logger.info("Book ID %s updated successfully", book_id)
+    
+    export_result = await export_book_to_json(db, book_id)
+    logger.info("Exported metadata to JSON for book ID %s", book_id)
+    log_audit(
+        "book_exported",
+        {"book_id": book_id, "export_path": export_result.get("path"), "title": update_data.get("title", existing.get("title"))},
+        "api"
+    )
+    
     log_audit(
         "book_updated",
         {"book_id": book_id, "title": existing.get("title"), "changes": update_data},
@@ -133,6 +133,16 @@ async def open_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
 
+    actual_size = os.path.getsize(file_path)
+    stored_size = book.get("file_size", 0)
+    warning = None
+    if stored_size and actual_size != stored_size:
+        logger.info("File size mismatch for book ID %s: stored=%s, actual=%s — updating", book_id, stored_size, actual_size)
+        await db.execute("UPDATE books SET file_size = ? WHERE id = ?", (actual_size, book_id))
+        await db.commit()
+        log_audit("file_size_updated", {"book_id": book_id, "old_size": stored_size, "new_size": actual_size}, "api")
+        warning = f"Размер файла изменился (был {stored_size} байт, стал {actual_size} байт). Возможно, файл был обновлён или заменён."
+
     if platform.system() == "Windows":
         os.startfile(file_path)
     elif platform.system() == "Darwin":
@@ -140,7 +150,10 @@ async def open_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
     else:
         subprocess.run(["xdg-open", file_path])
 
-    return {"success": True, "message": "Файл открыт"}
+    result = {"success": True, "message": "Файл открыт"}
+    if warning:
+        result["warning"] = warning
+    return result
 
 
 @router.post("/cleanup")
@@ -173,107 +186,115 @@ class SaveRichMetadataRequest(BaseModel):
     cover_url: Optional[str] = None
 
 
+async def _download_cover_background(
+    book_id: int,
+    cover_url: str,
+    json_dir: str,
+    book_filename: str,
+    source_id: int,
+):
+    """Фоновая задача: скачивание обложки и обновление БД."""
+    try:
+        async with aiosqlite.connect(DATABASE_URL) as bg_db:
+            bg_db.row_factory = aiosqlite.Row
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+                resp = await client.get(cover_url)
+                if resp.status_code == 200:
+                    content_type = resp.headers.get("content-type", "")
+                    url_ext = re.search(r'\.(\w+)(?:\?.*)?$', cover_url.split("/")[-1])
+                    if url_ext and url_ext.group(1).lower() in COVER_EXTENSIONS:
+                        ext = url_ext.group(1).lower()
+                    elif "jpeg" in content_type:
+                        ext = "jpg"
+                    elif "png" in content_type:
+                        ext = "png"
+                    elif "gif" in content_type:
+                        ext = "gif"
+                    elif "webp" in content_type:
+                        ext = "webp"
+                    else:
+                        ext = "jpg"
+
+                    cover_filename = f"{book_filename}.{ext}"
+                    cover_path = os.path.join(json_dir, cover_filename)
+
+                    with open(cover_path, "wb") as f:
+                        f.write(resp.content)
+
+                    await bg_db.execute(
+                        "UPDATE books SET cover_path = ?, cover_ext = ? WHERE id = ?",
+                        (cover_path, ext, book_id)
+                    )
+                    await bg_db.commit()
+                    logger.info("Background cover downloaded to %s for book ID %s", cover_path, book_id)
+                    log_audit("cover_downloaded", {"book_id": book_id, "cover_url": cover_url, "cover_path": cover_path, "status": "success"}, "api")
+                else:
+                    logger.warning("Background cover download failed status %s for book ID %s", resp.status_code, book_id)
+                    log_audit("cover_downloaded", {"book_id": book_id, "cover_url": cover_url, "status": "http_error", "http_status": resp.status_code}, "api")
+    except Exception as e:
+        logger.error("Background cover download error for book ID %s: %s", book_id, e)
+        log_audit("cover_downloaded", {"book_id": book_id, "cover_url": cover_url, "status": "error", "error": str(e)}, "api")
+
+
 @router.post("/{book_id}/save-metadata")
 async def save_book_rich_metadata(
     book_id: int,
     body: SaveRichMetadataRequest,
+    background_tasks: BackgroundTasks,
     db: aiosqlite.Connection = Depends(get_db),
 ):
     """
     Сохраняет расширенные метаданные книги в .lookup.json рядом с файлом книги.
-
-    Формат файла: {book_filename}.lookup.json
-    Содержит:
-      - lookup_source — откуда взяты данные (openlibrary/crossref/issn)
-      - lookup_code — какой тип кода использовался
-      - source_url — ссылка на источник
-      - cover_url — URL обложки
-      - raw — полный сырой ответ от внешнего API
-      - looked_up_at — таймстемп поиска
-
-    Создаётся при сохранении книги (saveBook в index.html),
-    если до этого был успешный поиск через searchIsbn().
-    Файл сохраняется рядом с книгой: {source_path}/{category}/{book}.lookup.json
+    Обложка скачивается в фоновой задаче.
     """
     book = await get_book_by_id(db, book_id)
     if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
     source_base_path = book.get("source_name", "")
-
-    # Получаем базовый путь хранилища из БД
     cursor = await db.execute("SELECT path FROM sources WHERE id = ?", (book.get("source_id"),))
     source_row = await cursor.fetchone()
-    if source_row:
-        source_base_path = source_row[0]
+    if not source_row:
+        raise HTTPException(status_code=500, detail="Source not found")
 
-        # Определяем путь к .lookup.json на основе пути к файлу книги
-        book_relative_path = book.get("relative_path", "")
-        book_dir = os.path.dirname(book_relative_path) if book_relative_path else ""
-        book_filename = os.path.splitext(os.path.basename(book.get("file_path", "book")))[0]
+    source_base_path = source_row[0]
 
-        json_dir = os.path.join(source_base_path, book_dir) if book_dir else source_base_path
-        json_path = os.path.join(json_dir, f"{book_filename}.lookup.json")
+    book_relative_path = book.get("relative_path", "")
+    book_dir = os.path.dirname(book_relative_path) if book_relative_path else ""
+    book_filename = os.path.splitext(os.path.basename(book.get("file_path", "book")))[0]
 
-        os.makedirs(json_dir, exist_ok=True)
+    json_dir = os.path.join(source_base_path, book_dir) if book_dir else source_base_path
+    json_path = os.path.join(json_dir, f"{book_filename}.lookup.json")
 
-        # Составляем структуру .lookup.json
-        entry = {
-            "lookup_source": body.lookup_source,
-            "lookup_code": body.lookup_code,
-            "source_url": body.source_url,
-            "cover_url": body.cover_url,
-            "raw": body.raw,
-            "looked_up_at": __import__("datetime").datetime.now().isoformat(),
-        }
+    os.makedirs(json_dir, exist_ok=True)
 
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(entry, f, ensure_ascii=False, indent=2, default=str)
+    entry = {
+        "lookup_source": body.lookup_source,
+        "lookup_code": body.lookup_code,
+        "source_url": body.source_url,
+        "cover_url": body.cover_url,
+        "raw": body.raw,
+        "looked_up_at": __import__("datetime").datetime.now().isoformat(),
+    }
 
-        logger.info("Rich metadata saved to %s for book ID %s", json_path, book_id)
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(entry, f, ensure_ascii=False, indent=2, default=str)
 
-        # Загружаем обложку, если передан cover_url
-        cover_downloaded = False
-        if body.cover_url:
-            try:
-                async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
-                    resp = await client.get(body.cover_url)
-                    if resp.status_code == 200:
-                        content_type = resp.headers.get("content-type", "")
-                        # Определяем расширение из URL или Content-Type
-                        url_ext = re.search(r'\.(\w+)(?:\?.*)?$', body.cover_url.split("/")[-1])
-                        if url_ext and url_ext.group(1).lower() in COVER_EXTENSIONS:
-                            ext = url_ext.group(1).lower()
-                        elif "jpeg" in content_type:
-                            ext = "jpg"
-                        elif "png" in content_type:
-                            ext = "png"
-                        elif "gif" in content_type:
-                            ext = "gif"
-                        elif "webp" in content_type:
-                            ext = "webp"
-                        else:
-                            ext = "jpg"
+    logger.info("Rich metadata saved to %s for book ID %s", json_path, book_id)
+    log_audit("lookup_metadata_saved", {
+        "book_id": book_id,
+        "lookup_path": json_path,
+        "lookup_source": body.lookup_source,
+        "lookup_code": body.lookup_code,
+        "has_cover_url": bool(body.cover_url)
+    }, "api")
 
-                        cover_filename = f"{book_filename}.{ext}"
-                        cover_path = os.path.join(json_dir, cover_filename)
+    cover_downloaded = False
+    if body.cover_url:
+        background_tasks.add_task(
+            _download_cover_background,
+            book_id, body.cover_url, json_dir, book_filename, book.get("source_id")
+        )
+        cover_downloaded = True
 
-                        with open(cover_path, "wb") as f:
-                            f.write(resp.content)
-
-                        # Обновляем запись в БД
-                        await db.execute(
-                            "UPDATE books SET cover_path = ?, cover_ext = ? WHERE id = ?",
-                            (cover_path, ext, book_id)
-                        )
-                        await db.commit()
-                        cover_downloaded = True
-                        logger.info("Cover downloaded to %s for book ID %s", cover_path, book_id)
-                    else:
-                        logger.warning("Cover download failed with status %s for URL %s", resp.status_code, body.cover_url)
-            except Exception as e:
-                logger.error("Cover download error for book ID %s: %s", book_id, str(e))
-
-        return {"success": True, "path": json_path, "cover_downloaded": cover_downloaded}
-
-    raise HTTPException(status_code=500, detail="Source not found")
+    return {"success": True, "path": json_path, "cover_downloaded": cover_downloaded}

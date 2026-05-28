@@ -12,3 +12,4 @@ SUPPORTED_METADATA_EXT = ["txt", "json"]
 COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 
 AUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "false").lower() == "true"  # Updated by setup
+GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY", "")

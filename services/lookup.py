@@ -17,11 +17,13 @@ from datetime import datetime
 from typing import Optional
 
 import httpx
+from config import GOOGLE_BOOKS_API_KEY
 
 logger = logging.getLogger(__name__)
 
 # Константы внешних API
 OPENLIBRARY_URL = "https://openlibrary.org"      # Открытая книжная база (ISBN)
+GOOGLE_BOOKS_URL = "https://www.googleapis.com/books/v1"  # Google Books API (резерв для ISBN)
 CROSSREF_URL = "https://api.crossref.org"         # CrossRef для DOI научных работ
 ISSN_PORTAL_URL = "https://portal.issn.org/api"   # ISSN Portal для сериальных изданий
 
@@ -114,6 +116,64 @@ async def lookup_isbn(normalized: str) -> dict:
             result["cover_url"] = info["cover"].get("large") or info["cover"].get("medium") or info["cover"].get("small")
         result["source_url"] = f"https://openlibrary.org/isbn/{normalized}"
         result["isbn"] = normalized
+        return result
+
+
+async def lookup_isbn_google(normalized: str) -> dict:
+    """
+    Резервный поиск по ISBN через Google Books API.
+
+    API: GET https://www.googleapis.com/books/v1/volumes?q=isbn:{isbn}
+    Опционально использует GOOGLE_BOOKS_API_KEY из config (снимает ограничение по частоте).
+    """
+    headers = {"User-Agent": "HomeLibrary/1.0"}
+    params = {"q": f"isbn:{normalized}"}
+    if GOOGLE_BOOKS_API_KEY:
+        params["key"] = GOOGLE_BOOKS_API_KEY
+
+    async with httpx.AsyncClient(timeout=15, headers=headers) as client:
+        resp = await client.get(f"{GOOGLE_BOOKS_URL}/volumes", params=params)
+        if resp.status_code == 429:
+            return {
+                "error": "Google Books: превышен лимит запросов. "
+                         "Укажите GOOGLE_BOOKS_API_KEY в переменных окружения для снятия ограничения."
+            }
+        if resp.status_code != 200:
+            return {"error": f"Google Books returned {resp.status_code}"}
+
+        data = resp.json()
+        items = data.get("items")
+        if not items:
+            return {"error": "Not found in Google Books", "raw": data}
+
+        info = items[0].get("volumeInfo", {})
+        result = {"source": "google_books", "raw": info}
+
+        if "title" in info:
+            result["title"] = info["title"]
+        if "authors" in info:
+            result["author"] = ", ".join(info["authors"])
+        if "publisher" in info:
+            result["publisher"] = info["publisher"]
+        if "publishedDate" in info:
+            m = re.search(r'\d{4}', str(info["publishedDate"]))
+            if m:
+                result["year"] = int(m.group())
+        if "pageCount" in info:
+            result["pages"] = info["pageCount"]
+        if "description" in info:
+            result["description"] = info["description"]
+        if "imageLinks" in info:
+            result["cover_url"] = info["imageLinks"].get("thumbnail", "").replace("http:", "https:")
+        if "infoLink" in info:
+            result["source_url"] = info["infoLink"]
+        if "industryIdentifiers" in info:
+            for ident in info["industryIdentifiers"]:
+                if ident.get("type") in ("ISBN_13", "ISBN_10"):
+                    result["isbn"] = ident["identifier"]
+                    break
+
+        result["detected_type"] = "isbn13" if len(normalized) == 13 else "isbn10"
         return result
 
 
@@ -218,6 +278,16 @@ async def lookup_code(code: str) -> dict:
 
     if code_type in ('isbn13', 'isbn10'):
         result = await lookup_isbn(normalized)
+        if "error" in result:
+            logger.info("OpenLibrary not found for ISBN %s, trying Google Books...", normalized)
+            fallback = await lookup_isbn_google(normalized)
+            if "error" not in fallback:
+                result = fallback
+            elif "error" in result:
+                result["fallback_suggestion"] = (
+                    "Поиск в OpenLibrary и Google Books не дал результатов. "
+                    "Попробуйте позже или найдите книгу вручную."
+                )
         result["detected_type"] = code_type
         return result
     elif code_type == 'doi':

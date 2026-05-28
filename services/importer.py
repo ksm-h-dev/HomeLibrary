@@ -46,7 +46,6 @@ async def parse_metadata_file(filepath: str) -> dict:
         "year": None,
         "pages": None,
         "format": "",
-        "file_size": 0,
         "description": "",
         "source_url": "",
     }
@@ -157,7 +156,6 @@ async def parse_json_metadata_file(filepath: str) -> dict:
         "year": None,
         "pages": None,
         "format": "",
-        "file_size": 0,
         "description": "",
         "source_url": "",
     }
@@ -285,12 +283,17 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 if ext not in SUPPORTED_FORMATS:
                     continue
 
+            try:
+                actual_size = os.path.getsize(filepath)
+            except OSError:
+                actual_size = 0
+
             book_info = {
                 "file_path": filepath,
                 "relative_path": compute_relative_path(directory, filepath),
                 "category_name": category_name,
                 "format": ext,
-                "file_size": os.path.getsize(filepath),
+                "file_size": actual_size,
             }
 
             meta_file, meta_ext = find_metadata_file(filepath)
@@ -300,9 +303,7 @@ async def scan_directory(directory: str, source_id: int = None) -> list[dict]:
                 else:
                     metadata = await parse_metadata_file(meta_file)
                 book_info.update(metadata)
-                book_info["file_size"] = (
-                    metadata.get("file_size") or book_info["file_size"]
-                )
+                book_info.pop("file_size", None)
 
             cover_file, cover_ext = find_cover_file(filepath)
             if cover_file:

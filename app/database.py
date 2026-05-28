@@ -2,7 +2,10 @@ import json
 import aiosqlite
 import os
 import stat
+import logging
 from config import DATABASE_URL
+
+logger = logging.getLogger(__name__)
 
 DATABASE_PATH = DATABASE_URL
 
@@ -1412,16 +1415,18 @@ async def confirm_book_presence(db: aiosqlite.Connection, book_id: int, filepath
     - is_available = 1 (книга в наличии)
     - last_seen = CURRENT_TIMESTAMP (время последнего подтверждения)
     - cover_ext (если найдена обложка - обновляем, иначе очищаем)
+    - file_size (актуальный размер файла)
     Флаг is_new_arrival НЕ сбрасывается (сбрасывается через 7 дней)
     """
     from services.importer import find_cover_file
     
     cover_file, cover_ext = find_cover_file(filepath) if filepath else (None, None)
+    file_size = os.path.getsize(filepath) if filepath and os.path.exists(filepath) else None
     
     if filepath:
         await db.execute(
-            "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP, cover_ext = ? WHERE id = ?",
-            (cover_ext or "", book_id),
+            "UPDATE books SET is_available = 1, last_seen = CURRENT_TIMESTAMP, cover_ext = ?, file_size = COALESCE(?, file_size) WHERE id = ?",
+            (cover_ext or "", file_size, book_id),
         )
     else:
         await db.execute(
@@ -1619,6 +1624,14 @@ async def export_book_to_json(db: aiosqlite.Connection, book_id: int) -> dict:
     import json
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(json_data, f, ensure_ascii=False, indent=2)
+
+    txt_path = os.path.join(json_dir, f"{book_filename}.txt")
+    if os.path.exists(txt_path):
+        try:
+            os.remove(txt_path)
+            logger.info("Removed old .txt metadata: %s", txt_path)
+        except OSError as e:
+            logger.warning("Failed to remove old .txt metadata %s: %s", txt_path, e)
 
     return {"success": True, "path": json_path}
 
