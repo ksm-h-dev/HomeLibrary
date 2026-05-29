@@ -354,7 +354,7 @@ async def get_categories(db: aiosqlite.Connection):
             FROM categories c
             INNER JOIN cat_path ON c.parent_id = cat_path.id
         )
-        SELECT id, name, source_id, parent_id, full_path FROM cat_path ORDER BY full_path
+        SELECT full_path, MIN(id) as id, name, source_id, parent_id FROM cat_path GROUP BY full_path ORDER BY full_path
     """)
     rows = await cursor.fetchall()
     return [dict(row) for row in rows]
