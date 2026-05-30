@@ -132,6 +132,24 @@ SORT_OPTIONS = {
     "pages": "b.pages DESC",
 }
 
+STR_FIELDS = {
+    "title", "author", "publisher", "isbn", "format", "description",
+    "file_path", "relative_path", "cover_path", "cover_ext",
+    "language", "source_url", "extra_files",
+}
+
+
+def _normalize_book(book: dict) -> dict:
+    for key in STR_FIELDS:
+        if book.get(key) is None:
+            book[key] = ""
+    stored = book.get("is_available")
+    if stored is None or stored == '':
+        book["is_available"] = os.path.exists(book.get("file_path", ""))
+    else:
+        book["is_available"] = bool(stored)
+    return book
+
 
 async def get_all_books(
     db: aiosqlite.Connection,
@@ -192,15 +210,7 @@ async def get_all_books(
     cursor = await db.execute(query, params)
     rows = await cursor.fetchall()
 
-    books = []
-    for row in rows:
-        book = dict(row)
-        stored = book.get("is_available")
-        if stored is None or stored == '':
-            book["is_available"] = os.path.exists(book.get("file_path", ""))
-        else:
-            book["is_available"] = bool(stored)
-        books.append(book)
+    books = [_normalize_book(dict(row)) for row in rows]
 
     count_params = params.copy()
     count_params.pop()
@@ -276,15 +286,7 @@ async def search_books(
     cursor = await db.execute(sql, params)
     rows = await cursor.fetchall()
 
-    books = []
-    for row in rows:
-        book = dict(row)
-        stored = book.get("is_available")
-        if stored is None or stored == '':
-            book["is_available"] = os.path.exists(book.get("file_path", ""))
-        else:
-            book["is_available"] = bool(stored)
-        books.append(book)
+    books = [_normalize_book(dict(row)) for row in rows]
 
     count_sql = """
         SELECT COUNT(*) FROM books_fts
@@ -334,13 +336,7 @@ async def get_book_by_id(db: aiosqlite.Connection, book_id: int):
     )
     row = await cursor.fetchone()
     if row:
-        book = dict(row)
-        stored = book.get("is_available")
-        if stored is None or stored == '':
-            book["is_available"] = os.path.exists(book.get("file_path", ""))
-        else:
-            book["is_available"] = bool(stored)
-        return book
+        return _normalize_book(dict(row))
     return None
 
 
@@ -1370,15 +1366,12 @@ async def get_books_by_source(
     )
     total = (await cursor.fetchone())[0]
 
-    books = []
-    for row in rows:
-        book = dict(row)
-        stored = book.get("is_available")
-        if stored is None or stored == '':
-            book["is_available"] = os.path.exists(book.get("file_path", ""))
-        else:
-            book["is_available"] = bool(stored)
-        books.append(book)
+    books = [_normalize_book(dict(row)) for row in rows]
+
+    cursor = await db.execute(
+        "SELECT COUNT(*) FROM books WHERE source_id = ?", (source_id,)
+    )
+    total = (await cursor.fetchone())[0]
 
     return books, total
 
@@ -1396,15 +1389,7 @@ async def get_books_by_source_all(db: aiosqlite.Connection, source_id: int):
         (source_id,),
     )
     rows = await cursor.fetchall()
-    books = []
-    for row in rows:
-        book = dict(row)
-        stored = book.get("is_available")
-        if stored is None or stored == '':
-            book["is_available"] = os.path.exists(book.get("file_path", ""))
-        else:
-            book["is_available"] = bool(stored)
-        books.append(book)
+    books = [_normalize_book(dict(row)) for row in rows]
     return books
 
 
