@@ -61,6 +61,74 @@ async def list_categories(db: aiosqlite.Connection = Depends(get_db)):
     return await get_categories(db)
 
 
+@router.get("/duplicates")
+async def find_duplicates(db: aiosqlite.Connection = Depends(get_db)):
+    """Находит потенциальные дубликаты книг в одном хранилище."""
+    cursor = await db.execute("""
+        SELECT id, title, author, file_path, file_size, year, pages,
+               source_id, relative_path
+        FROM books ORDER BY file_size, file_path
+    """)
+    rows = await cursor.fetchall()
+    columns = [d[0] for d in cursor.description]
+
+    groups = {}
+    for row in rows:
+        d = dict(zip(columns, row))
+        fname = d["file_path"].split("\\")[-1].lower()
+        key = (d["source_id"], d["file_size"], fname)
+        groups.setdefault(key, []).append(d)
+
+    result = []
+    for key, books in groups.items():
+        if len(books) > 1:
+            result.append({
+                "file_name": key[2],
+                "file_size": key[1],
+                "source_id": key[0],
+                "books": books
+            })
+
+    for group in result:
+        cursor = await db.execute("SELECT name FROM sources WHERE id = ?", (group["source_id"],))
+        row = await cursor.fetchone()
+        group["source_name"] = row[0] if row else f"ID {group['source_id']}"
+
+    return {"groups": result, "total": len(result)}
+
+
+class MergeDuplicatesRequest(BaseModel):
+    decisions: list[dict]
+
+
+@router.post("/duplicates/merge")
+async def merge_duplicates(
+    body: MergeDuplicatesRequest,
+    db: aiosqlite.Connection = Depends(get_db),
+):
+    """Удаляет выбранные дубликаты книг из базы (без удаления файлов)."""
+    deleted_count = 0
+    for decision in body.decisions:
+        delete_ids = decision.get("delete_ids", [])
+        keep_id = decision.get("keep_id")
+        group_key = decision.get("group_key", "")
+
+        for bid in delete_ids:
+            await db.execute("DELETE FROM books WHERE id = ?", (bid,))
+            deleted_count += 1
+            log_audit(
+                "duplicate_removed",
+                {"book_id": bid, "kept_id": keep_id, "group": group_key},
+                "api"
+            )
+
+    await db.commit()
+    return {
+        "deleted": deleted_count,
+        "message": f"Удалено {deleted_count} дубликатов"
+    }
+
+
 @router.get("/{book_id}", response_model=BookResponse)
 async def get_book(book_id: int, db: aiosqlite.Connection = Depends(get_db)):
     book = await get_book_by_id(db, book_id)
@@ -298,3 +366,4 @@ async def save_book_rich_metadata(
         cover_downloaded = True
 
     return {"success": True, "path": json_path, "cover_downloaded": cover_downloaded}
+

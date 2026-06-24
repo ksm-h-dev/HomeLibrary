@@ -231,6 +231,59 @@
             overflow: hidden;
             text-overflow: ellipsis;
         }
+        /* Filler items to fill last row */
+        .books-grid .filler { width: 100%; height: 0; padding: 0; margin: 0; border: none; box-shadow: none; overflow: hidden; pointer-events: none; visibility: hidden; min-height: 0; }
+
+        /* View mode: Cover */
+        .books-grid.cover-mode { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+        .books-grid.cover-mode .book-card { padding: 10px; text-align: center; display: flex; flex-direction: column; align-items: center; }
+        .books-grid.cover-mode .book-card .cover-thumb { width: 100%; height: 250px; object-fit: cover; border-radius: 4px; cursor: pointer; display: block; }
+        .books-grid.cover-mode .book-card .cover-placeholder { width: 100%; height: 250px; background: #ecf0f1; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 48px; color: #bdc3c7; cursor: pointer; }
+        .books-grid.cover-mode .book-card h3 { font-size: 14px; margin: 10px 0 4px; line-height: 1.3; }
+        .books-grid.cover-mode .book-card .author { font-size: 12px; margin-bottom: 4px; }
+        .books-grid.cover-mode .book-card .cover-meta { font-size: 11px; color: #999; display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-bottom: 8px; }
+        .books-grid.cover-mode .book-card .source-tag { background: #ffeaa7; color: #856404; padding: 2px 6px; border-radius: 4px; font-size: 10px; white-space: nowrap; }
+        .books-grid.cover-mode .book-card .open-btn { font-size: 12px; padding: 6px; margin-top: auto; }
+        .books-grid.cover-mode .book-card .edit-btn { position: absolute; top: 5px; right: 5px; font-size: 14px; }
+        .books-grid.cover-mode .book-card .cover-badge { position: absolute; top: 5px; left: 5px; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+
+        /* View mode: List */
+        .books-grid.list-mode { display: flex; flex-direction: column; gap: 2px; }
+        .books-grid.list-mode .book-card { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-radius: 4px; min-height: 42px; }
+        .books-grid.list-mode .book-card:hover { transform: none; box-shadow: none; background: #f0f0f0; }
+        .books-grid.list-mode .book-card .list-thumb { width: 32px; height: 42px; object-fit: cover; border-radius: 2px; flex-shrink: 0; cursor: pointer; }
+        .books-grid.list-mode .book-card .list-placeholder { width: 32px; height: 42px; background: #ecf0f1; border-radius: 2px; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; color: #bdc3c7; flex-shrink: 0; }
+        .books-grid.list-mode .book-card .list-title { flex: 1; font-size: 13px; color: #2c3e50; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .books-grid.list-mode .book-card .list-author { width: 180px; font-size: 12px; color: #666; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; }
+        .books-grid.list-mode .book-card .list-meta { display: flex; gap: 8px; font-size: 11px; color: #999; flex-shrink: 0; align-items: center; }
+        .books-grid.list-mode .book-card .list-meta .format-badge { font-size: 10px; padding: 1px 6px; }
+        .books-grid.list-mode .book-card .list-actions { flex-shrink: 0; display: flex; gap: 4px; margin-left: auto; }
+        .books-grid.list-mode .book-card .list-actions button { background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; }
+        .books-grid.list-mode .book-card .list-actions button:hover { background: #e0e0e0; }
+        .books-grid.list-mode .book-card .list-actions .open-btn { color: #27ae60; }
+        .books-grid.list-mode .book-card .list-actions .open-btn.disabled { color: #95a5a6; cursor: not-allowed; }
+        .books-grid.list-mode .book-card .list-actions .edit-btn { color: #3498db; }
+
+        /* View mode: Table */
+        .books-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .books-table thead th { background: #ecf0f1; padding: 8px 10px; text-align: left; font-weight: 600; color: #2c3e50; cursor: pointer; user-select: none; white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+        .books-table thead th:hover { background: #d5dbdb; }
+        .books-table thead th .sort-arrow { margin-left: 4px; color: #999; }
+        .books-table tbody tr { border-bottom: 1px solid #eee; }
+        .books-table tbody tr:hover { background: #f0f0f0; }
+        .books-table tbody tr.available td:first-child { border-left: 3px solid #28a745; }
+        .books-table tbody tr.missing td:first-child { border-left: 3px solid #dc3545; }
+        .books-table tbody td { padding: 6px 10px; vertical-align: middle; }
+        .books-table tbody td .table-thumb { width: 24px; height: 32px; object-fit: cover; border-radius: 2px; vertical-align: middle; cursor: pointer; }
+        .books-table tbody td .table-placeholder { display: inline-block; width: 24px; height: 32px; background: #ecf0f1; border-radius: 2px; text-align: center; line-height: 32px; font-size: 12px; color: #bdc3c7; vertical-align: middle; }
+        .books-table tbody td .table-actions { white-space: nowrap; }
+        .books-table tbody td .table-actions button { background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 4px; }
+        .books-table tbody td .table-actions button:hover { background: #e0e0e0; }
+        .books-table tbody td .table-actions .open-btn { color: #27ae60; }
+        .books-table tbody td .table-actions .open-btn.disabled { color: #95a5a6; cursor: not-allowed; }
+        .books-table tbody td .table-actions .edit-btn { color: #3498db; }
+        .books-table tbody td .table-title { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; vertical-align: middle; }
+        .books-table tbody td .table-isbn { font-size: 11px; color: #999; font-style: italic; }
     </style>
 </head>
 <body>
@@ -259,6 +312,24 @@
                     Записывает все операции с книгами и хранилищами в файл <code>audit.log</code> с полной детализацией.
                 </p>
                 <button class="settings-btn-action" id="openAuditLogBtn" onclick="openAuditLog()" style="display: none; margin-bottom: 10px;">Открыть audit.log</button>
+            </div>
+            <hr class="settings-divider">
+            <div class="settings-section">
+                <label>Стиль отображения:</label>
+                <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;transition:all 0.2s;">
+                        <input type="radio" name="viewMode" value="tile" onchange="setViewMode('tile')" style="accent-color:#3498db;"> Плитка
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;transition:all 0.2s;">
+                        <input type="radio" name="viewMode" value="cover" onchange="setViewMode('cover')" style="accent-color:#3498db;"> Обложки
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;transition:all 0.2s;">
+                        <input type="radio" name="viewMode" value="list" onchange="setViewMode('list')" style="accent-color:#3498db;"> Список
+                    </label>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 12px;border:1px solid #ddd;border-radius:6px;background:#fff;transition:all 0.2s;">
+                        <input type="radio" name="viewMode" value="table" onchange="setViewMode('table')" style="accent-color:#3498db;"> Таблица
+                    </label>
+                </div>
             </div>
             <hr class="settings-divider">
             <div class="settings-section">
@@ -566,6 +637,11 @@
                                 <div class="tile-icon" style="font-size: 36px; color: #e74c3c;">&#9888;</div>
                                 <div class="tile-label">Поиск аномалий</div>
                             </div>
+
+                            <div class="tools-tile" onclick="findDuplicates()" title="Найти книги-дубликаты">
+                                <div class="tile-icon" style="font-size: 36px; color: #8e44ad;">&#128203;</div>
+                                <div class="tile-label">Поиск дубликатов</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -578,7 +654,7 @@
         let totalBooks = 0;
         let currentQuery = '';
         let currentSort = 'date';
-        const limit = 20;
+        function getLimit() { return getViewMode() === 'cover' ? 30 : 20; }
 
         function showTab(tab) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
@@ -646,7 +722,7 @@
             noResults.style.display = 'none';
 
             try {
-                let url = '/api/books?limit=' + limit + '&offset=' + offset;
+                let url = '/api/books?limit=' + getLimit() + '&offset=' + offset;
                 const format = document.getElementById('formatFilter').value;
                 const category = document.getElementById('categoryFilter').value;
                 const year = document.getElementById('yearFilter').value;
@@ -674,28 +750,41 @@
 
                 loading.style.display = 'none';
                 totalBooks = data.total;
-                currentPage = Math.floor(offset / limit);
+                currentPage = Math.floor(offset / getLimit());
 
                 if (data.books.length === 0) {
                     noResults.style.display = 'block';
                 } else {
-                    data.books.forEach(book => {
-                        const card = document.createElement('div');
-                        let cardClass = 'book-card';
-                        if (book.is_available === false || book.is_available === 0) {
-                            cardClass += ' missing';
-                        } else {
-                            cardClass += ' available';
-                        }
-                        card.className = cardClass;
-                        const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
-                        const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
-                        const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
-                        card.innerHTML = '<h3>' + (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs('/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\.[^.]+$/, '.' + book.cover_ext))) + '\')" title="Показать обложку">&#128247;</span>' : '') + escapeHtml(book.title || 'Без названия') + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div>' + (book.isbn ? '<div class="isbn">ISBN: ' + escapeHtml(book.isbn) + '</div>' : '') + '<div class="meta"><span class="format-badge">' + (book.format || '?') + '</span>' + (book.year ? '<span>' + book.year + '</span>' : '') + (book.pages ? '<span>' + book.pages + ' стр.</span>' : '') + (book.category_name ? '<span class="category-tag">' + escapeHtml(book.category_name) + '</span>' : '') + (book.source_name ? '<span class="category-tag" style="background:#ffeaa7">' + escapeHtml(book.source_name) + '</span>' : '') + '</div>' + (book.description ? '<div class="description">' + escapeHtml(book.description) + '</div>' : '') + '<button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
-                        container.appendChild(card);
-                    });
+                    var viewMode = getViewMode();
+                    container.className = viewMode === 'cover' ? 'books-grid cover-mode' : viewMode === 'list' ? 'books-grid list-mode' : viewMode === 'table' ? '' : 'books-grid';
+                    if (viewMode === 'table') {
+                        renderTable(data.books, container);
+                    } else {
+                        data.books.forEach(function(book) {
+                            var card = document.createElement('div');
+                            var cardClass = 'book-card';
+                            if (book.is_available === false || book.is_available === 0) {
+                                cardClass += ' missing';
+                            } else {
+                                cardClass += ' available';
+                            }
+                            card.className = cardClass;
+                            var btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
+                            var btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
+                            var btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
+                            if (viewMode === 'cover') {
+                                card.innerHTML = buildCoverHTML(book, btnDisabled, btnText, btnClass);
+                            } else if (viewMode === 'list') {
+                                card.innerHTML = buildListHTML(book, btnDisabled, btnText, btnClass);
+                            } else {
+                                card.innerHTML = buildTileHTML(book, btnDisabled, btnText, btnClass);
+                            }
+                            container.appendChild(card);
+                        });
+                    }
                 }
 
+                if (viewMode !== 'table') fillLastRow(container);
                 updatePagination(data.total);
             } catch (e) {
                 loading.style.display = 'none';
@@ -722,7 +811,7 @@
             currentSort = document.getElementById('sortFilter').value;
 
             try {
-                let url = '/api/search?q=' + encodeURIComponent(query) + '&limit=' + limit;
+                let url = '/api/search?q=' + encodeURIComponent(query) + '&limit=' + getLimit();
                 const format = document.getElementById('formatFilter').value;
                 const category = document.getElementById('categoryFilter').value;
                 const year = document.getElementById('yearFilter').value;
@@ -754,24 +843,38 @@
                 if (data.books.length === 0) {
                     noResults.style.display = 'block';
                 } else {
-                    data.books.forEach(book => {
-                        const card = document.createElement('div');
-                        let cardClass = 'book-card';
-                        if (book.is_available === false || book.is_available === 0) {
-                            cardClass += ' missing';
-                        } else {
-                            cardClass += ' available';
-                        }
-                        card.className = cardClass;
-                        const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
-                        const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
-                        const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
-                        let title = book.title_hl || book.title || 'Без названия';
-                        card.innerHTML = '<h3>' + (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? '/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\.[^.]+$/, '.' + book.cover_ext)) : '') + '\')" title="Показать обложку">&#128247;</span>' : '') + title + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div>' + (book.isbn ? '<div class="isbn">ISBN: ' + escapeHtml(book.isbn) + '</div>' : '') + '<div class="meta"><span class="format-badge">' + (book.format || '?') + '</span>' + (book.year ? '<span>' + book.year + '</span>' : '') + (book.category_name ? '<span class="category-tag">' + escapeHtml(book.category_name) + '</span>' : '') + '</div>' + (book.desc_snippet ? '<div class="description">' + book.desc_snippet + '</div>' : '') + (book.source_name ? '<span class="category-tag" style="background:#ffeaa7">' + escapeHtml(book.source_name) + '</span>' : '') + '<button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
-                        container.appendChild(card);
-                    });
+                    var viewMode = getViewMode();
+                    container.className = viewMode === 'cover' ? 'books-grid cover-mode' : viewMode === 'list' ? 'books-grid list-mode' : viewMode === 'table' ? '' : 'books-grid';
+                    if (viewMode === 'table') {
+                        renderTable(data.books, container);
+                    } else {
+                        data.books.forEach(function(book) {
+                            var card = document.createElement('div');
+                            var cardClass = 'book-card';
+                            if (book.is_available === false || book.is_available === 0) {
+                                cardClass += ' missing';
+                            } else {
+                                cardClass += ' available';
+                            }
+                            card.className = cardClass;
+                            var btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
+                            var btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
+                            var btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
+                            var title = book.title_hl || book.title || 'Без названия';
+                            var descSnippet = book.desc_snippet ? '<div class="description">' + book.desc_snippet + '</div>' : '';
+                            if (viewMode === 'cover') {
+                                card.innerHTML = '<div class="cover-image-wrap">' + getCoverHTML(book) + '</div><h3>' + title + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div><div class="cover-meta">' + (book.format ? '<span class="format-badge">' + book.format + '</span>' : '') + (book.year ? '<span>' + book.year + '</span>' : '') + '</div><button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
+                            } else if (viewMode === 'list') {
+                                card.innerHTML = buildListHTML(book, btnDisabled, btnText, btnClass);
+                            } else {
+                                card.innerHTML = buildTileHTMLfromSearch(book, title, descSnippet, btnDisabled, btnText, btnClass);
+                            }
+                            container.appendChild(card);
+                        });
+                    }
                 }
 
+                if (viewMode !== 'table') fillLastRow(container);
                 updatePagination(data.total, true);
             } catch (e) {
                 loading.style.display = 'none';
@@ -783,7 +886,7 @@
             const pagination = document.getElementById('pagination');
             pagination.innerHTML = '';
 
-            const totalPages = Math.ceil(total / limit);
+            const totalPages = Math.ceil(total / getLimit());
             if (totalPages <= 1) return;
 
             const prevBtn = document.createElement('button');
@@ -794,7 +897,7 @@
                     searchPage(currentPage - 1);
                 } else {
                     currentSort = document.getElementById('sortFilter').value;
-                    loadBooks((currentPage - 1) * limit);
+                    loadBooks((currentPage - 1) * getLimit());
                 }
             };
             pagination.appendChild(prevBtn);
@@ -814,7 +917,7 @@
                         searchPage(page);
                     } else {
                         currentSort = document.getElementById('sortFilter').value;
-                        loadBooks(page * limit);
+                        loadBooks(page * getLimit());
                     }
                 };
                 pagination.appendChild(btn);
@@ -828,18 +931,18 @@
                     searchPage(currentPage + 1);
                 } else {
                     currentSort = document.getElementById('sortFilter').value;
-                    loadBooks((currentPage + 1) * limit);
+                    loadBooks((currentPage + 1) * getLimit());
                 }
             };
             pagination.appendChild(nextBtn);
         }
 
         async function searchPage(page) {
-            const offset = page * limit;
+            const offset = page * getLimit();
             const container = document.getElementById('booksContainer');
 
             try {
-                let url = '/api/search?q=' + encodeURIComponent(currentQuery) + '&limit=' + limit + '&offset=' + offset;
+                let url = '/api/search?q=' + encodeURIComponent(currentQuery) + '&limit=' + getLimit() + '&offset=' + offset;
                 const format = document.getElementById('formatFilter').value;
                 const sourceId = document.getElementById('sourceFilter').value;
                 const availability = document.getElementById('availabilityFilter').value;
@@ -854,24 +957,36 @@
                 container.innerHTML = '';
                 currentPage = page;
 
-                data.books.forEach(book => {
-                    const card = document.createElement('div');
-                    let cardClass = 'book-card';
-                    if (book.is_available === false || book.is_available === 0) {
-                        cardClass += ' missing';
-                    } else {
-                        cardClass += ' available';
-                    }
-                    card.className = cardClass;
-                    const btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
-                    const btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
-                    const btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
-                    let title = book.title_hl || book.title || 'Без названия';
-                    title = (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? '/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\.[^.]+$/, '.' + book.cover_ext)) : '') + '\')" title="Показать обложку">&#128247;</span>' : '') + title;
-                    card.innerHTML = '<h3>' + title + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div><div class="meta"><span class="format-badge">' + (book.format || '?') + '</span>' + (book.year ? '<span>' + book.year + '</span>' : '') + '</div><button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
-                    container.appendChild(card);
-                });
+                var viewMode = getViewMode();
+                container.className = viewMode === 'cover' ? 'books-grid cover-mode' : viewMode === 'list' ? 'books-grid list-mode' : viewMode === 'table' ? '' : 'books-grid';
+                if (viewMode === 'table') {
+                    renderTable(data.books, container);
+                } else {
+                    data.books.forEach(function(book) {
+                        var card = document.createElement('div');
+                        var cardClass = 'book-card';
+                        if (book.is_available === false || book.is_available === 0) {
+                            cardClass += ' missing';
+                        } else {
+                            cardClass += ' available';
+                        }
+                        card.className = cardClass;
+                        var btnDisabled = (book.is_available === false || book.is_available === 0) ? 'disabled' : '';
+                        var btnText = (book.is_available === false || book.is_available === 0) ? 'Файл отсутствует' : 'Открыть файл';
+                        var btnClass = (book.is_available === false || book.is_available === 0) ? 'open-btn disabled' : 'open-btn';
+                        var title = book.title_hl || book.title || 'Без названия';
+                        if (viewMode === 'cover') {
+                            card.innerHTML = '<div class="cover-image-wrap">' + getCoverHTML(book) + '</div><h3>' + title + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div><div class="cover-meta">' + (book.format ? '<span class="format-badge">' + book.format + '</span>' : '') + (book.year ? '<span>' + book.year + '</span>' : '') + '</div><button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
+                        } else if (viewMode === 'list') {
+                            card.innerHTML = buildListHTML(book, btnDisabled, btnText, btnClass);
+                        } else {
+                            card.innerHTML = '<h3>' + (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(book.file_path ? '/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\.[^.]+$/, '.' + book.cover_ext)) : '') + '\')" title="Показать обложку">&#128247;</span>' : '') + title + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div><div class="meta"><span class="format-badge">' + (book.format || '?') + '</span>' + (book.year ? '<span>' + book.year + '</span>' : '') + '</div><button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
+                        }
+                        container.appendChild(card);
+                    });
+                }
 
+                if (viewMode !== 'table') fillLastRow(container);
                 updatePagination(data.total, true);
             } catch (e) { console.error(e); }
         }
@@ -1547,6 +1662,145 @@
             return (text || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
         }
 
+        // View mode helpers
+        function getViewMode() { return localStorage.getItem('viewMode') || 'tile'; }
+        function setViewMode(mode) {
+            localStorage.setItem('viewMode', mode);
+            document.querySelectorAll('input[name="viewMode"]').forEach(function(r) { r.checked = r.value === mode; });
+            currentPage = 0;
+            reRenderCurrentView();
+        }
+        function reRenderCurrentView() {
+            if (currentQuery) { performSearch(); }
+            else { loadBooks(currentPage * getLimit()); }
+        }
+        function getCoverUrl(book) {
+            if (!book || !book.cover_ext || !book.file_path) return '';
+            return '/api/cover?path=' + encodeURIComponent(book.file_path.replace(/\.[^.]+$/, '.' + book.cover_ext));
+        }
+        function getCoverHTML(book) {
+            if (!book.cover_ext) return '<span class="cover-placeholder" onclick="showCoverModal(\'' + escapeJs(getCoverUrl(book)) + '\')"' + (getCoverUrl(book) ? '' : '') + '>&#128218;</span>';
+            return '<img class="cover-thumb" src="' + escapeJs(getCoverUrl(book)) + '" onclick="showCoverModal(\'' + escapeJs(getCoverUrl(book)) + '\')" alt="Обложка" loading="lazy">';
+        }
+        function getListCoverHTML(book) {
+            if (!book.cover_ext) return '<span class="list-placeholder">&#128218;</span>';
+            return '<img class="list-thumb" src="' + escapeJs(getCoverUrl(book)) + '" onclick="showCoverModal(\'' + escapeJs(getCoverUrl(book)) + '\')" alt="" loading="lazy">';
+        }
+        function getTableCoverHTML(book) {
+            if (!book.cover_ext) return '<span class="table-placeholder">&#128218;</span>';
+            return '<img class="table-thumb" src="' + escapeJs(getCoverUrl(book)) + '" onclick="showCoverModal(\'' + escapeJs(getCoverUrl(book)) + '\')" alt="" loading="lazy">';
+        }
+        function formatFileSize(bytes) {
+            if (!bytes || bytes === 0) return '';
+            if (bytes > 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+            if (bytes > 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return bytes + ' B';
+        }
+        function buildTileHTML(book, btnDisabled, btnText, btnClass) {
+            return '<h3>' + (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(getCoverUrl(book)) + '\')" title="Показать обложку">&#128247;</span>' : '') + escapeHtml(book.title || 'Без названия') + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div>' + (book.isbn ? '<div class="isbn">ISBN: ' + escapeHtml(book.isbn) + '</div>' : '') + '<div class="meta"><span class="format-badge">' + (book.format || '?') + '</span>' + (book.year ? '<span>' + book.year + '</span>' : '') + (book.pages ? '<span>' + book.pages + ' стр.</span>' : '') + (book.file_size ? '<span>' + formatFileSize(book.file_size) + '</span>' : '') + (book.category_name ? '<span class="category-tag">' + escapeHtml(book.category_name) + '</span>' : '') + (book.source_name ? '<span class="category-tag" style="background:#ffeaa7">' + escapeHtml(book.source_name) + '</span>' : '') + '</div>' + (book.description ? '<div class="description">' + escapeHtml(book.description) + '</div>' : '') + '<button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
+        }
+        function buildTileHTMLfromSearch(book, title, descSnippet, btnDisabled, btnText, btnClass) {
+            return '<h3>' + (book.cover_ext ? '<span class="cover-icon" onclick="showCoverModal(\'' + escapeJs(getCoverUrl(book)) + '\')" title="Показать обложку">&#128247;</span>' : '') + title + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div>' + (book.isbn ? '<div class="isbn">ISBN: ' + escapeHtml(book.isbn) + '</div>' : '') + '<div class="meta"><span class="format-badge">' + (book.format || '?') + '</span>' + (book.year ? '<span>' + book.year + '</span>' : '') + (book.pages ? '<span>' + book.pages + ' стр.</span>' : '') + (book.category_name ? '<span class="category-tag">' + escapeHtml(book.category_name) + '</span>' : '') + '</div>' + (descSnippet ? '<div class="description">' + descSnippet + '</div>' : '') + (book.source_name ? '<span class="category-tag" style="background:#ffeaa7">' + escapeHtml(book.source_name) + '</span>' : '') + '<button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
+        }
+        function buildCoverHTML(book, btnDisabled, btnText, btnClass) {
+            var coverInfo = (book.format ? '<span class="format-badge">' + book.format + '</span>' : '') + (book.year ? '<span>' + book.year + '</span>' : '') + (book.source_name ? '<span class="source-tag">' + escapeHtml(book.source_name) + '</span>' : '');
+            return '<div class="cover-image-wrap">' + getCoverHTML(book) + '</div><h3>' + escapeHtml(book.title || 'Без названия') + '</h3><div class="author">' + escapeHtml(book.author || 'Автор неизвестен') + '</div><div class="cover-meta">' + coverInfo + '</div><button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="' + btnClass + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">' + btnText + '</button>';
+        }
+        function buildListHTML(book, btnDisabled, btnText, btnClass) {
+            var metaParts = [];
+            if (book.format) metaParts.push('<span class="format-badge">' + book.format + '</span>');
+            if (book.year) metaParts.push('<span>' + book.year + '</span>');
+            if (book.pages) metaParts.push('<span>' + book.pages + ' стр.</span>');
+            if (book.file_size) metaParts.push('<span>' + formatFileSize(book.file_size) + '</span>');
+            if (book.category_name) metaParts.push('<span class="category-tag">' + escapeHtml(book.category_name) + '</span>');
+            var metaHTML = metaParts.length ? '<div class="list-meta">' + metaParts.join('') + '</div>' : '';
+            var actionsHTML = '<div class="list-actions"><button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="open-btn' + (btnDisabled ? ' disabled' : '') + '" ' + btnDisabled + ' onclick="' + (btnDisabled ? '' : 'openBook(' + book.id + ')') + '">&#128196;</button></div>';
+            return getListCoverHTML(book) + '<span class="list-title" title="' + escapeHtml(book.title || 'Без названия') + '">' + escapeHtml(book.title || 'Без названия') + '</span><span class="list-author" title="' + escapeHtml(book.author || 'Автор неизвестен') + '">' + escapeHtml(book.author || 'Автор неизвестен') + '</span>' + metaHTML + actionsHTML;
+        }
+        function renderTable(books, container) {
+            var table = document.createElement('table');
+            table.className = 'books-table';
+            var thead = document.createElement('thead');
+            thead.innerHTML = '<tr><th onclick="sortTable(\'title\')">Название <span class="sort-arrow">&#8597;</span></th><th onclick="sortTable(\'author\')">Автор <span class="sort-arrow">&#8597;</span></th><th onclick="sortTable(\'format\')">Формат</th><th onclick="sortTable(\'year\')">Год <span class="sort-arrow">&#8597;</span></th><th onclick="sortTable(\'pages\')">Стр. <span class="sort-arrow">&#8597;</span></th><th onclick="sortTable(\'publisher\')">Издатель</th><th onclick="sortTable(\'language\')">Язык</th><th>Действия</th></tr>';
+            table.appendChild(thead);
+            var tbody = document.createElement('tbody');
+            books.forEach(function(book) {
+                var tr = document.createElement('tr');
+                var isMissing = book.is_available === false || book.is_available === 0;
+                tr.className = isMissing ? 'missing' : 'available';
+                var btnDisabled = isMissing ? 'disabled' : '';
+                var openAttr = isMissing ? '' : 'onclick="openBook(' + book.id + ')"';
+                var isbnHTML = book.isbn ? '<br><span class="table-isbn">ISBN: ' + escapeHtml(book.isbn) + '</span>' : '';
+                var lang = book.language || '';
+                tr.innerHTML = '<td>' + getTableCoverHTML(book) + ' <span class="table-title" title="' + escapeHtml(book.title || 'Без названия') + '">' + escapeHtml(book.title || 'Без названия') + '</span>' + isbnHTML + '</td><td>' + escapeHtml(book.author || '') + '</td><td>' + (book.format ? '<span class="format-badge">' + book.format + '</span>' : '') + '</td><td>' + (book.year || '') + '</td><td>' + (book.pages || '') + '</td><td>' + escapeHtml(book.publisher || '') + '</td><td>' + lang + '</td><td class="table-actions"><button class="edit-btn" onclick="editBook(' + book.id + ')" title="Редактировать">&#9998;</button><button class="open-btn' + (isMissing ? ' disabled' : '') + '" ' + btnDisabled + ' ' + openAttr + ' title="' + (isMissing ? 'Файл отсутствует' : 'Открыть') + '">&#128196;</button></td>';
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+            container.innerHTML = '';
+            container.appendChild(table);
+        }
+        // Fill last row with invisible items so the grid row looks complete
+        function fillLastRow(container) {
+            var items = container.children;
+            if (items.length === 0) return;
+            var firstTop = items[0].offsetTop;
+            var cols = 0;
+            for (var i = 0; i < items.length; i++) {
+                if (items[i].offsetTop === firstTop) cols++;
+                else break;
+            }
+            if (cols === 0) cols = 1;
+            var remainder = items.length % cols;
+            if (remainder > 0) {
+                for (var i = 0; i < cols - remainder; i++) {
+                    var filler = document.createElement('div');
+                    filler.className = 'filler';
+                    container.appendChild(filler);
+                }
+            }
+        }
+        // Table sort state
+        var tableSortState = { col: '', asc: true };
+        function sortTable(col) {
+            var container = document.getElementById('booksContainer');
+            var table = container.querySelector('.books-table');
+            if (!table) return;
+            var tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            var rows = Array.from(tbody.querySelectorAll('tr'));
+            var isAsc = tableSortState.col === col ? !tableSortState.asc : true;
+            tableSortState.col = col;
+            tableSortState.asc = isAsc;
+            rows.sort(function(a, b) {
+                var getVal = function(tr, idx) {
+                    var cell = tr.cells[idx];
+                    if (!cell) return '';
+                    var text = cell.textContent.trim().toLowerCase();
+                    if (col === 'pages' || col === 'year') return parseInt(text) || 0;
+                    if (col === 'format') {
+                        var badge = cell.querySelector('.format-badge');
+                        return badge ? badge.textContent.trim().toLowerCase() : text;
+                    }
+                    return text;
+                };
+                var colIdx = { 'title': 0, 'author': 1, 'format': 2, 'year': 3, 'pages': 4, 'publisher': 5, 'language': 6 };
+                var idx = colIdx[col] !== undefined ? colIdx[col] : 0;
+                var aVal = getVal(a, idx);
+                var bVal = getVal(b, idx);
+                if (typeof aVal === 'number' && typeof bVal === 'number') return isAsc ? aVal - bVal : bVal - aVal;
+                return isAsc ? (aVal < bVal ? -1 : aVal > bVal ? 1 : 0) : (bVal < aVal ? -1 : bVal > aVal ? 1 : 0);
+            });
+            rows.forEach(function(r) { tbody.appendChild(r); });
+            // Update sort arrows
+            table.querySelectorAll('thead th .sort-arrow').forEach(function(span) { span.innerHTML = '&#8597;'; });
+            var headerCells = table.querySelectorAll('thead th');
+            var arrow = headerCells[{'title':0,'author':1,'format':2,'year':3,'pages':4,'publisher':5,'language':6}[col]];
+            if (arrow) {
+                var arrowSpan = arrow.querySelector('.sort-arrow');
+                if (arrowSpan) arrowSpan.innerHTML = isAsc ? '&#8593;' : '&#8595;';
+            }
+        }
+
         async function executeAction() {
             const action = document.getElementById('actionFilter').value;
             currentPage = 0;
@@ -1597,6 +1851,11 @@
                 document.getElementById('currentLibraryPath').textContent =
                     data.default_source_path || 'Не настроено';
                 loadAuditStatus();
+                // Set view mode radio
+                var viewMode = getViewMode();
+                document.querySelectorAll('input[name="viewMode"]').forEach(function(r) {
+                    r.checked = r.value === viewMode;
+                });
             } catch (e) {
                 document.getElementById('currentLibraryPath').textContent = 'Ошибка загрузки';
             }
@@ -2067,6 +2326,154 @@
             }
         }
 
+        // Duplicate detection functions
+        var duplicatesData = null;
+
+        async function findDuplicates() {
+            document.getElementById('duplicatesModal').classList.add('active');
+            document.getElementById('duplicatesLoading').style.display = 'block';
+            document.getElementById('duplicatesContent').style.display = 'none';
+            document.getElementById('duplicatesMergeBtn').style.display = 'none';
+
+            try {
+                var res = await fetch('/api/books/duplicates');
+                var data = await res.json();
+                duplicatesData = data;
+
+                document.getElementById('duplicatesLoading').style.display = 'none';
+                document.getElementById('duplicatesContent').style.display = 'block';
+
+                var summary = document.getElementById('duplicatesSummary');
+                if (data.total === 0) {
+                    summary.innerHTML = '<p style="color: #27ae60; font-weight: bold;">&#10003; Дубликаты не найдены</p>';
+                    return;
+                }
+
+                summary.innerHTML = '<p>Найдено <strong>' + data.total + '</strong> групп дубликатов.</p>';
+
+                var list = document.getElementById('duplicatesList');
+                list.innerHTML = '';
+
+                data.groups.forEach(function(group, idx) {
+                    var groupDiv = document.createElement('div');
+                    groupDiv.style.cssText = 'background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 12px; margin-bottom: 12px;';
+
+                    var header = document.createElement('div');
+                    header.style.cssText = 'font-weight: bold; margin-bottom: 8px; color: #2c3e50; font-size: 14px;';
+                    var sizeKB = Math.round(group.file_size / 1024);
+                    header.textContent = (idx + 1) + '. ' + group.file_name + ' (' + sizeKB + ' KB) — ' + (group.source_name || 'Хранилище ' + group.source_id);
+                    groupDiv.appendChild(header);
+
+                    var bestIdx = 0;
+                    var bestScore = -1;
+                    group.books.forEach(function(b, bi) {
+                        var score = (b.pages ? 1 : 0) + (b.year ? 1 : 0) + (b.description && b.description.length > 0 ? 1 : 0);
+                        if (score > bestScore) { bestScore = score; bestIdx = bi; }
+                    });
+
+                    group.books.forEach(function(book, bi) {
+                        var isBest = bi === bestIdx;
+                        var row = document.createElement('div');
+                        row.style.cssText = 'display: flex; align-items: center; gap: 10px; padding: 6px 8px; margin: 4px 0; border-radius: 4px; background: ' + (isBest ? '#d4edda' : '#fff') + '; border: 1px solid ' + (isBest ? '#c3e6cb' : '#eee') + ';';
+
+                        var radio = document.createElement('input');
+                        radio.type = 'radio';
+                        radio.name = 'dup_keep_' + idx;
+                        radio.value = book.id;
+                        radio.checked = isBest;
+                        radio.style.cssText = 'accent-color: #27ae60;';
+                        row.appendChild(radio);
+
+                        var info = document.createElement('div');
+                        info.style.cssText = 'flex: 1; font-size: 12px; line-height: 1.4;';
+                        info.innerHTML = '<strong>' + escapeHtml(book.title || 'Без названия') + '</strong><br>' +
+                            escapeHtml(book.author || 'Автор неизвестен') + ' &mdash; ' +
+                            (book.year || '?') + ' г., ' +
+                            (book.pages ? book.pages + ' стр.' : 'без стр.') +
+                            '<br><span style="color: #999;">' + escapeHtml(book.relative_path || '') + '</span>';
+                        row.appendChild(info);
+
+                        var badge = document.createElement('span');
+                        if (isBest) {
+                            badge.textContent = 'лучшая';
+                            badge.style.cssText = 'background: #27ae60; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap;';
+                        } else {
+                            badge.textContent = 'дубликат';
+                            badge.style.cssText = 'background: #e74c3c; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap;';
+                        }
+                        row.appendChild(badge);
+
+                        groupDiv.appendChild(row);
+                    });
+
+                    list.appendChild(groupDiv);
+                });
+
+                document.getElementById('duplicatesMergeBtn').style.display = 'block';
+
+            } catch (e) {
+                console.error(e);
+                document.getElementById('duplicatesLoading').style.display = 'none';
+                document.getElementById('duplicatesContent').style.display = 'block';
+                document.getElementById('duplicatesSummary').innerHTML = '<p style="color: #e74c3c;">Ошибка: ' + escapeHtml(e.message) + '</p>';
+            }
+        }
+
+        function closeDuplicatesModal() {
+            document.getElementById('duplicatesModal').classList.remove('active');
+            duplicatesData = null;
+        }
+
+        async function applyDuplicatesMerge() {
+            if (!duplicatesData || duplicatesData.total === 0) return;
+
+            var decisions = [];
+
+            duplicatesData.groups.forEach(function(group, idx) {
+                var selectedRadio = document.querySelector('input[name="dup_keep_' + idx + '"]:checked');
+                if (!selectedRadio) return;
+
+                var keepId = parseInt(selectedRadio.value);
+                var deleteIds = group.books
+                    .filter(function(b) { return b.id !== keepId; })
+                    .map(function(b) { return b.id; });
+
+                if (deleteIds.length > 0) {
+                    decisions.push({
+                        keep_id: keepId,
+                        delete_ids: deleteIds,
+                        group_key: group.file_name
+                    });
+                }
+            });
+
+            if (decisions.length === 0) {
+                showMessageModal('Дубликаты', 'Нет дубликатов для удаления.');
+                return;
+            }
+
+            try {
+                var res = await fetch('/api/books/duplicates/merge', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ decisions: decisions })
+                });
+                var result = await res.json();
+
+                if (res.ok) {
+                    showMessageModal('Дубликаты', result.message);
+                    closeDuplicatesModal();
+                    // Refresh current view
+                    if (currentQuery) { performSearch(); }
+                    else { loadBooks(currentPage * getLimit()); }
+                } else {
+                    showMessageModal('Ошибка', 'Ошибка при удалении: ' + (result.detail || JSON.stringify(result)));
+                }
+            } catch (e) {
+                showMessageModal('Ошибка', 'Ошибка: ' + e.message);
+            }
+        }
+
         // Message modal functions
         function showMessageModal(title, message) {
             document.getElementById('messageModalTitle').textContent = title || 'Сообщение';
@@ -2182,6 +2589,23 @@
 
         <div class="buttons" style="margin-top: 15px;">
             <button class="cancel-btn" onclick="closeAnomalyModal()">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<div id="duplicatesModal" class="modal-overlay">
+    <div class="modal" style="max-width: 900px; width: 95%; max-height: 90vh; display: flex; flex-direction: column;">
+        <h2>Поиск дубликатов</h2>
+        <div id="duplicatesLoading" style="text-align:center; padding: 30px; color: #666;">
+            <span style="font-size: 18px;">&#8987;</span> Поиск...
+        </div>
+        <div id="duplicatesContent" style="display:none; flex:1; overflow-y: auto; min-height: 0;">
+            <div id="duplicatesSummary" style="background: #f8f9fa; padding: 12px; border-radius: 4px; margin-bottom: 10px;"></div>
+            <div id="duplicatesList"></div>
+        </div>
+        <div class="buttons" style="margin-top: 15px;">
+            <button id="duplicatesMergeBtn" class="save-btn" onclick="applyDuplicatesMerge()" style="display:none;">Удалить выбранные дубликаты</button>
+            <button class="cancel-btn" onclick="closeDuplicatesModal()">Закрыть</button>
         </div>
     </div>
 </div>

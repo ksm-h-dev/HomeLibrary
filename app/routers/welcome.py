@@ -323,30 +323,10 @@ async def restart_server():
 
 @router.post("/audit/toggle")
 async def toggle_audit(enable: bool = Query(...)):
-    """Enable or disable detailed audit logging and save to config."""
+    """Enable or disable detailed audit logging."""
     from services.audit import toggle
 
     new_state = toggle(enable)
-
-    # Save to config.py - write as string for os.getenv compatibility
-    config_path = Path(__file__).parent.parent.parent / "config.py"
-    if config_path.exists():
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        # Replace AUDIT_ENABLED line - write as string "true" or "false"
-        import re
-        str_value = "true" if new_state else "false"
-        pattern = r"AUDIT_ENABLED\s*=\s*.*$"
-        replacement = f'AUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "{str_value}").lower() == "true"  # Updated by setup'
-
-        if re.search(pattern, content, re.MULTILINE):
-            content = re.sub(pattern, replacement, content, count=1, flags=re.MULTILINE)
-        else:
-            content += f'\nAUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "{str_value}").lower() == "true"  # Added by setup\n'
-
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(content)
 
     log_audit(
         "audit_toggled",
@@ -354,12 +334,4 @@ async def toggle_audit(enable: bool = Query(...)):
         "setup"
     )
 
-    # Restart server to apply new config
-    import subprocess
-    import sys
-    from config import SERVER_PORT
-    logger.info("Restarting server to apply AUDIT_ENABLED=%s", new_state)
-    subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app",
-                      "--host", "0.0.0.0", "--port", str(SERVER_PORT), "--reload"])
-    import os
-    os._exit(0)
+    return {"audit_enabled": new_state, "message": f"Аудит {'включён' if new_state else 'отключён'}"}
