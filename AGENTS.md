@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```powershell
-cd С:\Library
+cd C:\Library
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -21,18 +21,22 @@ H:\Work.Py\HomeLibrary\
 │   ├── database.py        # SQLite + FTS5 full-text search
 │   ├── models.py          # Pydantic models
 │   └── routers/
-│       ├── books.py      # Books API
+│       ├── books.py      # Books API (CRUD, duplicates, save-metadata)
 │       ├── search.py     # Search API
 │       ├── sources.py    # Storage sources API
 │       └── welcome.py    # Setup wizard + About page API
 ├── services/
 │   ├── importer.py        # Scans filesystem, imports to DB
-│   └── drives.py          # Windows drive discovery (WMI)
+│   ├── lookup.py          # External API lookup (OpenLibrary, CrossRef, ISSN)
+│   ├── drives.py          # Windows drive discovery (WMI)
+│   ├── audit.py           # Audit logging system
+│   └── progress.py        # Progress tracker for SSE scan events
 ├── web/
-│   ├── index.html         # SPA frontend
+│   ├── index.html         # SPA frontend (3 tabs, view modes, modals)
 │   ├── about.html         # About page
 │   └── setup.html         # First-run setup wizard
-├── config.py              # Configuration
+├── config.py              # Configuration (DEFAULT_SOURCE_PATH, AUDIT_ENABLED, etc.)
+├── settings.json          # Persisted runtime settings (audit_enabled)
 ├── start_server.cmd      # Quick start script
 ├── library.db             # SQLite database
 └── requirements.txt     # Python dependencies
@@ -51,7 +55,7 @@ H:\Work.Py\HomeLibrary\
 | `app/routers/books.py` | Book CRUD API with export/move on update, translated messages to Russian |
 | `app/routers/sources.py` | Storage management API (CRUD, scan with scanned/imported/confirmed/covers_found stats, transfer with progress, translated messages) |
 | `app/routers/welcome.py` | First-run setup, about page API, initialize library (clears books + sources + categories), translated messages |
-| `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards, custom modal dialogs (replaces alert/confirm), tools tab with DB initialize |
+| `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards, **4 view modes (tile/cover/list/table)**, custom modal dialogs (replaces alert/confirm), tools tab with DB initialize and **duplicates finder** |
 | `web/setup.html` | First-run setup wizard |
 | `web/about.html` | About page |
 
@@ -121,7 +125,10 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/api/setup/skip` | POST | Skip setup |
 | `/api/setup/initialize` | POST | Reset library (delete all books + sources + categories, returns categories_deleted) |
 | `/api/cover?path=...` | GET | Serve cover image (proxy) |
-| `/api/audit-log` | GET | View audit log (if enabled) |
+| `/api/setup/audit/toggle` | POST | Toggle audit logging (persists to settings.json, no server restart) |
+| `/api/books/duplicates` | GET | Find duplicate books (same source + size + filename) |
+| `/api/books/duplicates/merge` | POST | Delete selected duplicate records |
+| `/api/books/cleanup` | POST | Remove all unavailable books |
 
 ## Search
 
@@ -157,6 +164,8 @@ SUPPORTED_METADATA_EXT = ["txt", "json"]
 COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 ```
 
+Runtime-настройки (audit_enabled) хранятся в `settings.json`, не в `config.py` — это предотвращает перезагрузку uvicorn при переключении.
+
 ## Features
 
 - **Full-text search** с использованием SQLite FTS5
@@ -178,8 +187,11 @@ COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
 - **Обложки книг** - автоматическое обнаружение при сканировании, отображение по клику
 - **Прокси обложек** - `/api/cover?path=...` для безопасной загрузки изображений
 - **Три вкладки интерфейса**: Каталог, Хранилища, Инструменты
+- **Четыре режима отображения**: Плитка, Обложки (30 книг на странице), Список, Таблица (с сортировкой по столбцам)
+- **Название хранилища на карточке** — во всех режимах отображения
+- **Поиск и удаление дубликатов** — автоматическое обнаружение по (source_id + file_size + имя_файла) с выбором лучшей записи
 - **Расширенное редактирование книги**: publisher, pages, format, language
-- **Аудит-логи** - отслеживание действий пользователя (services/audit.py)
+- **Аудит-логи** - отслеживание действий пользователя (services/audit.py, настройка хранится в settings.json)
 - **Прогресс-трекер** - SSE-события для сканирования без дублирования (services/progress.py)
 - **Кастомные модальные окна** - замена alert()/confirm() на единый стиль
 - **Перевод сообщений** - API возвращает сообщения на русском языке
