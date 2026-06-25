@@ -22,6 +22,7 @@ H:\Work.Py\HomeLibrary\
 │   ├── models.py          # Pydantic models
 │   └── routers/
 │       ├── books.py      # Books API (CRUD, duplicates, save-metadata)
+│       ├── lookup.py     # External lookup proxy (ISBN/DOI/ISSN)
 │       ├── search.py     # Search API
 │       ├── sources.py    # Storage sources API
 │       └── welcome.py    # Setup wizard + About page API
@@ -53,6 +54,7 @@ H:\Work.Py\HomeLibrary\
 | `services/progress.py` | Progress tracker for SSE scan events (fixes duplicate complete events) |
 | `app/database.py` | SQLite init, FTS5 triggers, CRUD helpers, export_book_to_json, move_book_files, transfer_source, availability logic, new arrivals handling, extra_files support |
 | `app/routers/books.py` | Book CRUD API with export/move on update, translated messages to Russian |
+| `app/routers/lookup.py` | External lookup proxy (ISBN/DOI/ISSN) |
 | `app/routers/sources.py` | Storage management API (CRUD, scan with scanned/imported/confirmed/covers_found stats, transfer with progress, translated messages) |
 | `app/routers/welcome.py` | First-run setup, about page API, initialize library (clears books + sources + categories), translated messages |
 | `web/index.html` | Browser client - search, browse, manage sources, cover preview modal, availability filters, color-coded cards, **4 view modes (tile/cover/list/table)**, custom modal dialogs (replaces alert/confirm), tools tab with DB initialize and **duplicates finder** |
@@ -103,7 +105,6 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 | `/` | GET | Main page |
 | `/about` | GET | About page |
 | `/setup` | GET | First-run setup wizard |
-| `/api/health` | GET | Health check |
 | `/api/books` | GET | List books (limit, offset, category, format, year, source_id, sort_by, **availability**) |
 | `/api/books/{id}` | GET | Book details |
 | PUT | `/api/books/{id}` | Update book (exports metadata to .json, moves files) |
@@ -151,7 +152,6 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 ```python
 import os
 
-BOOKS_DIR = os.getenv("LIBRARY_BOOKS_DIR", "H:/Book/")
 DATABASE_URL = os.getenv("LIBRARY_DB", "library.db")
 SERVER_HOST = os.getenv("LIBRARY_HOST", "0.0.0.0")
 SERVER_PORT = int(os.getenv("LIBRARY_PORT", "8000"))
@@ -162,6 +162,9 @@ SHOW_WELCOME = os.getenv("LIBRARY_SHOW_WELCOME", "true")
 SUPPORTED_FORMATS = ["pdf", "djvu", "rar", "zip", "rtf", "7z"]
 SUPPORTED_METADATA_EXT = ["txt", "json"]
 COVER_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "bmp", "tiff"]
+
+AUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "true").lower() == "true"
+GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY", "")
 ```
 
 Runtime-настройки (audit_enabled) хранятся в `settings.json`, не в `config.py` — это предотвращает перезагрузку uvicorn при переключении.
