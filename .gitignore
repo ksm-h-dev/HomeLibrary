@@ -4,3 +4,10 @@ __pycache__/
 *.log
 .opencode/
 .DS_Store
+
+# Russian documentation (English versions are tracked instead)
+AGENTS.md
+ARCHITECTURE.md
+README.md
+Plan.md
+TEST_CHECKLIST.md
