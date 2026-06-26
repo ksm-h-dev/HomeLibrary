@@ -1,4 +1,4 @@
-[**English**](AGENTS.en.md) | [**Русский**](AGENTS.md)
+[**English**](AGENTS.md) | [**Русский**](AGENTS.ru.md)
 
 # Library Project - Home Librarian
 

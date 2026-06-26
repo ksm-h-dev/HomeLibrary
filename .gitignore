@@ -6,8 +6,4 @@ __pycache__/
 .DS_Store
 
 # Russian documentation (English versions are tracked instead)
-AGENTS.md
-ARCHITECTURE.md
-README.ru.md
-Plan.md
-TEST_CHECKLIST.md
+*.ru.md

@@ -1,4 +1,4 @@
-[**English**](ARCHITECTURE.en.md) | [**Русский**](ARCHITECTURE.md)
+[**English**](ARCHITECTURE.md) | [**Русский**](ARCHITECTURE.ru.md)
 
 # System Architecture "Home Librarian"
 

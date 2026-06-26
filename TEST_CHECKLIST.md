@@ -1,4 +1,4 @@
-[**English**](TEST_CHECKLIST.en.md) | [**Русский**](TEST_CHECKLIST.md)
+[**English**](TEST_CHECKLIST.md) | [**Русский**](TEST_CHECKLIST.ru.md)
 
 # Test Checklist — Home Librarian
 

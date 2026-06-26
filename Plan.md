@@ -1,4 +1,4 @@
-[**English**](Plan.en.md) | [**Русский**](Plan.md)
+[**English**](Plan.md) | [**Русский**](Plan.ru.md)
 
 # Plan - ideas for future implementation
 

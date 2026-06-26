@@ -1,4 +1,4 @@
-[**English**](README.en.md) | [**Русский**](README.md)
+[**English**](README.md) | [**Русский**](README.ru.md)
 
 # Home Librarian
 
