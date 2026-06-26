@@ -8,6 +8,6 @@ __pycache__/
 # Russian documentation (English versions are tracked instead)
 AGENTS.md
 ARCHITECTURE.md
-README.md
+README.ru.md
 Plan.md
 TEST_CHECKLIST.md
