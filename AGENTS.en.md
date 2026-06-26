@@ -1,6 +1,6 @@
 [**English**](AGENTS.en.md) | [**Русский**](AGENTS.md)
 
-# Library Project - Домашний библиотекарь
+# Library Project - Home Librarian
 
 ## Quick Start
 
@@ -9,7 +9,7 @@ cd C:\Library
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Или использовать скрипт:
+Or use the script:
 ```powershell
 .\start_server.cmd
 ```
@@ -68,33 +68,33 @@ H:\Work.Py\HomeLibrary\
 - SQLite with FTS5 virtual table for full-text search
 - Triggers auto-update FTS index on INSERT/UPDATE/DELETE to `books`
 - `books` table: unique index on `source_id + relative_path` (no duplicates)
-- New fields: `cover_ext` (обложка: jpg/png/gif/webp/bmp/tiff), `is_available`, `is_new_arrival`, `last_seen`, `format`
-- `extra_files` (TEXT) — JSON-массив путей multi-part архивов (.part2.rar, .7z.002)
+- New fields: `cover_ext` (cover: jpg/png/gif/webp/bmp/tiff), `is_available`, `is_new_arrival`, `last_seen`, `format`
+- `extra_files` (TEXT) — JSON array of paths to multi-part archives (.part2.rar, .7z.002)
 
 ## Storage Sources
 
 Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 
-**Удаление хранилища:** При удалении хранилища удаляются все связанные книги (каскадное удаление).
+**Deleting a source:** When a source is deleted, all associated books are also deleted (cascading deletion).
 
-**Идентификация:**
-1. `catalog.json` → `id` поле (предпочтительно для съемных носителей)
-2. Volume label (метка тома Windows)
+**Identification:**
+1. `catalog.json` → `id` field (preferred for removable media)
+2. Volume label (Windows volume label)
 3. Path fallback
 
-**Логика сканирования:**
-- Существующие книги: подтверждение наличия (обновление `is_available`, `last_seen`) без перезаписи данных
-- Новые книги: добавление с флагом `is_new_arrival = 1`
-- Отсутствующие книги: пометка `is_available = 0` (красный цвет карточки)
-- Флаг "Новое поступление" сбрасывается через 7 дней после подтверждения
+**Scan logic:**
+- Existing books: confirmation of availability (update `is_available`, `last_seen`) without overwriting data
+- New books: added with flag `is_new_arrival = 1`
+- Missing books: marked `is_available = 0` (red card color)
+- The "New arrival" flag is reset 7 days after confirmation
 
-## First Run (Автозапуск)
+## First Run (Auto-start)
 
 ```
-1. Server starts → checkSetup() в JavaScript
-2. Проверка: sources=0 и DEFAULT_SOURCE_PATH настроен?
-3. Если да → спросить "Автоматически просканировать?"
-4. Если нет/отказ → переход к /setup
+1. Server starts → checkSetup() in JavaScript
+2. Check: sources=0 and DEFAULT_SOURCE_PATH configured?
+3. If yes → ask "Auto-scan?"
+4. If no/decline → redirect to /setup
 5. User selects folder → /api/setup/save-path
 6. Scan runs → books imported with source_id
 7. Redirect to /
@@ -140,14 +140,14 @@ Sources table supports: `local`, `hdd`, `ssd`, `dvd`, `nas`, `network`, `cloud`
 - Search results include `title_hl` and `desc_snippet`
 - Search supports `availability` filter: `available`, `missing`, `new`
 
-## Категории
+## Categories
 
-- **Структура**: иерархия через `parent_id`, full_path вычисляется через VIEW `category_paths`
-- **Индивидуальность**: каждая категория привязана к `source_id`
-- **Фильтр**: ищет по последней части пути (после `/`), примеры:
-  - `Soft/Server 2003` → ищет `Server 2003`
-  - `Учеба/Soft/Server 2003` → ищет `Server 2003`
-  - `Книги/Языки/English` → ищет `English`
+- **Structure**: hierarchy via `parent_id`, full_path computed through VIEW `category_paths`
+- **Uniqueness**: each category is tied to a `source_id`
+- **Filter**: searches by the last part of the path (after `/`), examples:
+  - `Soft/Server 2003` → searches for `Server 2003`
+  - `Study/Soft/Server 2003` → searches for `Server 2003`
+  - `Books/Languages/English` → searches for `English`
 
 ## Configuration (config.py)
 
@@ -169,35 +169,35 @@ AUDIT_ENABLED = os.getenv("LIBRARY_AUDIT_ENABLED", "true").lower() == "true"
 GOOGLE_BOOKS_API_KEY = os.getenv("GOOGLE_BOOKS_API_KEY", "")
 ```
 
-Runtime-настройки (audit_enabled) хранятся в `settings.json`, не в `config.py` — это предотвращает перезагрузку uvicorn при переключении.
+Runtime settings (audit_enabled) are stored in `settings.json`, not in `config.py` — this prevents uvicorn from restarting when toggling.
 
 ## Features
 
-- **Full-text search** с использованием SQLite FTS5
-- **Каскадное удаление** хранилищ, книг и категорий
-- **Инициализация библиотеки** - полная очистка БД
-- **Управление хранилищами** - добавление, редактирование, удаление, перенос с прогресс-баром
-- **Автосканирование при первом запуске** (по желанию)
-- **Ручное сканирование** - только по кнопке, SSE-прогресс
-- **Метаданные** - поддержка KOI8-R, CP1251, .json приоритет над .txt
-- **Категория** - определяется по имени папки, привязана к хранилищу (source_id)
-- **Подтверждение наличия** - при сканировании книги подтверждаются без перезаписи данных
-- **Новые поступления** - флаг is_new_arrival (сбрасывается через 7 дней)
-- **Фильтрация по наличию** - доступно/отсутствует/новые поступления
-- **Цветовая индикация** - зелёный (в наличии), красный (отсутствует)
-- **Экспорт метаданных** - при редактировании книги метаданные экспортируются в .json
-- **Перемещение файлов** - при изменении пути перемещаются все файлы книги (.pdf + .json + .txt + обложка)
-- **Поддержка многотомных архивов** - .part1.rar, .part2.rar и т.д. (extra_files)
-- **Расширенные форматы обложек** - bmp, webp, tiff
-- **Обложки книг** - автоматическое обнаружение при сканировании, отображение по клику
-- **Прокси обложек** - `/api/cover?path=...` для безопасной загрузки изображений
-- **Три вкладки интерфейса**: Каталог, Хранилища, Инструменты
-- **Четыре режима отображения**: Плитка, Обложки (30 книг на странице), Список, Таблица (с сортировкой по столбцам)
-- **Название хранилища на карточке** — во всех режимах отображения
-- **Поиск и удаление дубликатов** — автоматическое обнаружение по (source_id + file_size + имя_файла) с выбором лучшей записи
-- **Расширенное редактирование книги**: publisher, pages, format, language
-- **Аудит-логи** - отслеживание действий пользователя (services/audit.py, настройка хранится в settings.json)
-- **Прогресс-трекер** - SSE-события для сканирования без дублирования (services/progress.py)
-- **Кастомные модальные окна** - замена alert()/confirm() на единый стиль
-- **Перевод сообщений** - API возвращает сообщения на русском языке
-- **Исправление статистики сканирования** - корректный подсчет imported/confirmed/covers_found
+- **Full-text search** using SQLite FTS5
+- **Cascading deletion** of sources, books and categories
+- **Library initialization** - full database cleanup
+- **Source management** - add, edit, delete, transfer with progress bar
+- **Auto-scan on first run** (optional)
+- **Manual scan** - button-only, SSE progress
+- **Metadata** - KOI8-R, CP1251 support, .json priority over .txt
+- **Category** - determined by folder name, tied to source (source_id)
+- **Availability confirmation** - books are confirmed during scan without overwriting data
+- **New arrivals** - is_new_arrival flag (resets after 7 days)
+- **Availability filtering** - available/missing/new arrivals
+- **Color indication** - green (available), red (missing)
+- **Metadata export** - when editing a book, metadata is exported to .json
+- **File moving** - when path changes, all book files are moved (.pdf + .json + .txt + cover)
+- **Multi-part archive support** - .part1.rar, .part2.rar, etc. (extra_files)
+- **Extended cover formats** - bmp, webp, tiff
+- **Book covers** - automatic detection during scan, show on click
+- **Cover proxy** - `/api/cover?path=...` for secure image loading
+- **Three interface tabs**: Catalog, Sources, Tools
+- **Four view modes**: Tile, Covers (30 books per page), List, Table (with column sorting)
+- **Source name on card** - in all view modes
+- **Duplicate search and removal** - automatic detection by (source_id + file_size + filename) with best record selection
+- **Extended book editing**: publisher, pages, format, language
+- **Audit logs** - user action tracking (services/audit.py, setting stored in settings.json)
+- **Progress tracker** - SSE events for scanning without duplication (services/progress.py)
+- **Custom modal dialogs** - replacing alert()/confirm() with a unified style
+- **Message translation** - API returns messages in Russian
+- **Scan statistics fix** - correct counting of imported/confirmed/covers_found
